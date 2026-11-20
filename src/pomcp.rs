@@ -27,16 +27,18 @@ use crate::solution::Status;
 
 /// Settings of [`pomcp`].
 ///
+/// The struct is `#[non_exhaustive]`: outside this crate, build it from `default()` with
+/// the `with_*` methods; fields stay readable and assignable.
+///
 /// ```
 /// use stochastic_search::{Limits, PomcpConfig};
 ///
-/// let config = PomcpConfig {
-///     exploration: 110.0, // the reward range of the problem
-///     ..PomcpConfig::default()
-/// }
-/// .with_budget(Limits { max_trials: Some(50_000), ..PomcpConfig::DEFAULT_LIMITS });
+/// let config = PomcpConfig::default()
+///     .with_exploration(110.0) // the reward range of the problem
+///     .with_budget(Limits { max_trials: Some(50_000), ..PomcpConfig::DEFAULT_LIMITS });
 /// # let _ = config;
 /// ```
+#[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct PomcpConfig<B = Limits, O = ()> {
     /// The discount factor `gamma`, in `(0, 1]`. Default `0.95`.
@@ -85,6 +87,42 @@ impl Default for PomcpConfig {
 }
 
 impl<B, O> PomcpConfig<B, O> {
+    /// Returns the same configuration with another [`PomcpConfig::discount`].
+    #[must_use]
+    pub fn with_discount(self, discount: f64) -> Self {
+        Self { discount, ..self }
+    }
+
+    /// Returns the same configuration with another [`PomcpConfig::exploration`].
+    #[must_use]
+    pub fn with_exploration(self, exploration: f64) -> Self {
+        Self {
+            exploration,
+            ..self
+        }
+    }
+
+    /// Returns the same configuration with another [`PomcpConfig::max_depth`].
+    #[must_use]
+    pub fn with_max_depth(self, max_depth: usize) -> Self {
+        Self { max_depth, ..self }
+    }
+
+    /// Returns the same configuration with another [`PomcpConfig::seed`].
+    #[must_use]
+    pub fn with_seed(self, seed: u64) -> Self {
+        Self { seed, ..self }
+    }
+
+    /// Returns the same configuration with another [`PomcpConfig::progress_interval`].
+    #[must_use]
+    pub fn with_progress_interval(self, progress_interval: Option<u64>) -> Self {
+        Self {
+            progress_interval,
+            ..self
+        }
+    }
+
     /// Returns the same configuration with the exploration constant set to the largest
     /// possible spread of discounted returns when every reward lies in `[min, max]`:
     /// `(max - min) * (1 + gamma + ... + gamma^(D - 1))` for discount `gamma` and depth `D`.
@@ -97,7 +135,7 @@ impl<B, O> PomcpConfig<B, O> {
     /// use stochastic_search::PomcpConfig;
     ///
     /// // Tiger: rewards from -100 to 10, two steps, no discounting.
-    /// let config = PomcpConfig { discount: 1.0, max_depth: 2, ..PomcpConfig::default() }
+    /// let config = PomcpConfig::default().with_discount(1.0).with_max_depth(2)
     ///     .with_reward_range(-100.0, 10.0);
     /// assert_eq!(config.exploration, 220.0);
     /// ```
@@ -230,7 +268,7 @@ impl<B, O> PomcpConfig<B, O> {
 /// # }
 /// use stochastic_search::{PomcpConfig, UniformRandom, pomcp};
 ///
-/// let config = PomcpConfig { exploration: 20.0, ..PomcpConfig::default() };
+/// let config = PomcpConfig::default().with_exploration(20.0);
 /// let plan = pomcp(&Coin, &[true, false], UniformRandom, config)?;
 ///
 /// assert_eq!(plan.action, "peek");
@@ -300,7 +338,7 @@ where
 /// let c = pomcp_exploration(&Coin, &[true, false], UniformRandom, &base, 1_000)?;
 /// assert!(c > 0.0);
 ///
-/// let plan = pomcp(&Coin, &[true, false], UniformRandom, PomcpConfig { exploration: c, ..base })?;
+/// let plan = pomcp(&Coin, &[true, false], UniformRandom, base.with_exploration(c))?;
 /// assert_eq!(plan.action, "peek");
 /// # Ok::<(), stochastic_search::Error<bool>>(())
 /// ```
@@ -384,7 +422,7 @@ where
 /// # }
 /// use stochastic_search::{Pomcp, PomcpConfig, UniformRandom};
 ///
-/// let config = PomcpConfig { exploration: 20.0, ..PomcpConfig::default() };
+/// let config = PomcpConfig::default().with_exploration(20.0);
 /// let mut planner = Pomcp::new(&Coin, UniformRandom, config)?;
 /// let plan = planner.plan(&[true, false])?;
 /// assert_eq!(plan.action, "peek");

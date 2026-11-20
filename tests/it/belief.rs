@@ -17,11 +17,9 @@ fn left_fraction(particles: &[bool]) -> f64 {
 #[test]
 fn filter_matches_the_exact_tiger_posterior() {
     let mut rng = SplitMix64::new(3);
-    let filter = BeliefFilter {
-        particles: 40_000,
-        max_attempts: 1_000_000,
-        ..BeliefFilter::default()
-    };
+    let filter = BeliefFilter::default()
+        .with_particles(40_000)
+        .with_max_attempts(1_000_000);
     let listen = |belief: &[bool], rng: &mut SplitMix64| {
         update_belief(
             &Tiger,
@@ -50,11 +48,10 @@ fn filter_matches_the_exact_tiger_posterior() {
 #[test]
 fn reinvigoration_fills_the_shortfall() {
     let mut rng = SplitMix64::new(5);
-    let filter = BeliefFilter {
-        particles: 100,
-        max_attempts: 50,
-        reinvigorate: 10,
-    };
+    let filter = BeliefFilter::default()
+        .with_particles(100)
+        .with_max_attempts(50)
+        .with_reinvigorate(10);
     let mut transformed = 0;
     let update = update_belief(
         &Tiger,
@@ -82,10 +79,7 @@ fn reinvigoration_fills_the_shortfall() {
 #[test]
 fn filter_reports_depletion_and_bad_input() {
     let mut rng = SplitMix64::new(1);
-    let filter = BeliefFilter {
-        max_attempts: 200,
-        ..BeliefFilter::default()
-    };
+    let filter = BeliefFilter::default().with_max_attempts(200);
     let keep = |s: &bool, _: &mut SplitMix64| *s;
 
     // Opening a door always observes `None`.
@@ -111,10 +105,7 @@ fn filter_reports_depletion_and_bad_input() {
     );
     assert_eq!(empty, Err(Error::EmptyBelief));
 
-    let zero = BeliefFilter {
-        particles: 0,
-        ..filter
-    };
+    let zero = filter.with_particles(0);
     let invalid = update_belief(
         &Tiger,
         &tiger_belief(1, 2),
@@ -154,10 +145,7 @@ impl stochastic_search::Pomdp for OneShot {
 #[test]
 fn filter_rejects_terminal_successors() {
     let mut rng = SplitMix64::new(2);
-    let filter = BeliefFilter {
-        max_attempts: 10,
-        ..BeliefFilter::default()
-    };
+    let filter = BeliefFilter::default().with_max_attempts(10);
     let update = update_belief(&OneShot, &[1, 2], &(), &(), filter, &mut rng, |s, _| *s);
 
     assert_eq!(update, Err(Error::BeliefDepleted { attempts: 10 }));

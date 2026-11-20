@@ -196,17 +196,15 @@ type Planner = fn(usize, u64) -> TigerAction;
 
 /// POMCP with 20 000 simulations and always-listen rollouts.
 fn pomcp_action(left: usize, seed: u64) -> TigerAction {
-    let config = PomcpConfig {
-        discount: DISCOUNT,
-        exploration: 110.0,
-        max_depth: 60,
-        seed,
-        ..PomcpConfig::default()
-    }
-    .with_budget(Limits {
-        max_trials: Some(20_000),
-        ..PomcpConfig::DEFAULT_LIMITS
-    });
+    let config = PomcpConfig::default()
+        .with_discount(DISCOUNT)
+        .with_exploration(110.0)
+        .with_max_depth(60)
+        .with_seed(seed)
+        .with_budget(Limits {
+            max_trials: Some(20_000),
+            ..PomcpConfig::DEFAULT_LIMITS
+        });
 
     pomcp(&Tiger, &tiger_belief(left, 200), AlwaysListen, config)
         .expect("valid input")
@@ -215,17 +213,15 @@ fn pomcp_action(left: usize, seed: u64) -> TigerAction {
 
 /// DESPOT with 200 scenarios and 2 000 explorations.
 fn despot_action(left: usize, seed: u64) -> TigerAction {
-    let config = DespotConfig {
-        discount: DISCOUNT,
-        scenarios: 200,
-        max_depth: 40,
-        seed,
-        ..DespotConfig::default()
-    }
-    .with_budget(Limits {
-        max_trials: Some(2_000),
-        ..DespotConfig::DEFAULT_LIMITS
-    });
+    let config = DespotConfig::default()
+        .with_discount(DISCOUNT)
+        .with_scenarios(200)
+        .with_max_depth(40)
+        .with_seed(seed)
+        .with_budget(Limits {
+            max_trials: Some(2_000),
+            ..DespotConfig::DEFAULT_LIMITS
+        });
 
     despot(
         &Tiger,

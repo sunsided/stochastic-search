@@ -30,17 +30,19 @@ use crate::solution::Status;
 
 /// Settings of [`despot`].
 ///
+/// The struct is `#[non_exhaustive]`: outside this crate, build it from `default()` with
+/// the `with_*` methods; fields stay readable and assignable.
+///
 /// ```
 /// use stochastic_search::{DespotConfig, Limits};
 ///
-/// let config = DespotConfig {
-///     scenarios: 200,
-///     regularization: 0.1,
-///     ..DespotConfig::default()
-/// }
-/// .with_budget(Limits { max_trials: Some(5_000), ..DespotConfig::DEFAULT_LIMITS });
+/// let config = DespotConfig::default()
+///     .with_scenarios(200)
+///     .with_regularization(0.1)
+///     .with_budget(Limits { max_trials: Some(5_000), ..DespotConfig::DEFAULT_LIMITS });
 /// # let _ = config;
 /// ```
+#[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct DespotConfig<B = Limits, O = ()> {
     /// The discount factor `gamma`, in `(0, 1]`. Default `0.95`.
@@ -102,6 +104,60 @@ impl Default for DespotConfig {
 }
 
 impl<B, O> DespotConfig<B, O> {
+    /// Returns the same configuration with another [`DespotConfig::discount`].
+    #[must_use]
+    pub fn with_discount(self, discount: f64) -> Self {
+        Self { discount, ..self }
+    }
+
+    /// Returns the same configuration with another [`DespotConfig::scenarios`].
+    #[must_use]
+    pub fn with_scenarios(self, scenarios: usize) -> Self {
+        Self { scenarios, ..self }
+    }
+
+    /// Returns the same configuration with another [`DespotConfig::regularization`].
+    #[must_use]
+    pub fn with_regularization(self, regularization: f64) -> Self {
+        Self {
+            regularization,
+            ..self
+        }
+    }
+
+    /// Returns the same configuration with another [`DespotConfig::xi`].
+    #[must_use]
+    pub fn with_xi(self, xi: f64) -> Self {
+        Self { xi, ..self }
+    }
+
+    /// Returns the same configuration with another [`DespotConfig::max_depth`].
+    #[must_use]
+    pub fn with_max_depth(self, max_depth: usize) -> Self {
+        Self { max_depth, ..self }
+    }
+
+    /// Returns the same configuration with another [`DespotConfig::target_gap`].
+    #[must_use]
+    pub fn with_target_gap(self, target_gap: f64) -> Self {
+        Self { target_gap, ..self }
+    }
+
+    /// Returns the same configuration with another [`DespotConfig::seed`].
+    #[must_use]
+    pub fn with_seed(self, seed: u64) -> Self {
+        Self { seed, ..self }
+    }
+
+    /// Returns the same configuration with another [`DespotConfig::progress_interval`].
+    #[must_use]
+    pub fn with_progress_interval(self, progress_interval: Option<u64>) -> Self {
+        Self {
+            progress_interval,
+            ..self
+        }
+    }
+
     /// Returns the same configuration with another budget.
     #[must_use]
     pub fn with_budget<B2: Budget<TreeStats>>(self, budget: B2) -> DespotConfig<B2, O> {
@@ -240,7 +296,7 @@ impl<B, O> DespotConfig<B, O> {
 /// # }
 /// use stochastic_search::{DespotConfig, UniformRandom, despot};
 ///
-/// let config = DespotConfig { scenarios: 100, max_depth: 10, ..DespotConfig::default() };
+/// let config = DespotConfig::default().with_scenarios(100).with_max_depth(10);
 /// let plan = despot(&Coin, &[true, false], UniformRandom, |_: &bool| 10.0, config)?;
 ///
 /// assert_eq!(plan.action, "peek");
@@ -306,7 +362,7 @@ where
 /// # }
 /// use stochastic_search::{Despot, DespotConfig, UniformRandom};
 ///
-/// let config = DespotConfig { scenarios: 100, max_depth: 5, ..DespotConfig::default() };
+/// let config = DespotConfig::default().with_scenarios(100).with_max_depth(5);
 /// let mut planner = Despot::new(&Coin, &[true, false], UniformRandom, |_: &bool| 10.0, config)?;
 /// assert_eq!(planner.plan()?.action, "peek");
 ///

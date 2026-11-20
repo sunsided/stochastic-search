@@ -10,12 +10,16 @@ use crate::pomdp::{Pomdp, below, check_reward};
 
 /// Settings of [`update_belief`].
 ///
+/// The struct is `#[non_exhaustive]`: outside this crate, build it from `default()` with
+/// the `with_*` methods; fields stay readable and assignable.
+///
 /// ```
 /// use stochastic_search::BeliefFilter;
 ///
-/// let filter = BeliefFilter { particles: 4_000, reinvigorate: 250, ..BeliefFilter::default() };
+/// let filter = BeliefFilter::default().with_particles(4_000).with_reinvigorate(250);
 /// # let _ = filter;
 /// ```
+#[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct BeliefFilter {
     /// The number `K` of particles the rejection phase aims for. At least `1`. Default
@@ -27,6 +31,32 @@ pub struct BeliefFilter {
     /// Particles added by reinvigoration on top of the accepted ones (the paper adds `n / 16`
     /// for `n` simulations per decision). Default `0`.
     pub reinvigorate: usize,
+}
+
+impl BeliefFilter {
+    /// Returns the same filter with another [`BeliefFilter::particles`].
+    #[must_use]
+    pub fn with_particles(self, particles: usize) -> Self {
+        Self { particles, ..self }
+    }
+
+    /// Returns the same filter with another [`BeliefFilter::max_attempts`].
+    #[must_use]
+    pub fn with_max_attempts(self, max_attempts: usize) -> Self {
+        Self {
+            max_attempts,
+            ..self
+        }
+    }
+
+    /// Returns the same filter with another [`BeliefFilter::reinvigorate`].
+    #[must_use]
+    pub fn with_reinvigorate(self, reinvigorate: usize) -> Self {
+        Self {
+            reinvigorate,
+            ..self
+        }
+    }
 }
 
 impl Default for BeliefFilter {
@@ -109,7 +139,7 @@ pub struct BeliefUpdate<S> {
 /// use stochastic_search::{BeliefFilter, SplitMix64, update_belief};
 ///
 /// let mut rng = SplitMix64::new(7);
-/// let filter = BeliefFilter { particles: 10_000, ..BeliefFilter::default() };
+/// let filter = BeliefFilter::default().with_particles(10_000);
 /// let update = update_belief(&Coin, &[true, false], &"peek", &Some(true), filter, &mut rng, |s, _| *s)?;
 ///
 /// let heads = update.particles.iter().filter(|&&h| h).count();

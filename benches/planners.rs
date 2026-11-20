@@ -161,15 +161,13 @@ impl RolloutPolicy<bool> for Listen {
 
 /// 10 000 POMCP simulations from the uniform Tiger belief.
 fn bench_pomcp(criterion: &mut Criterion) {
-    let config = PomcpConfig {
-        exploration: 110.0,
-        max_depth: 60,
-        ..PomcpConfig::default()
-    }
-    .with_budget(Limits {
-        max_trials: Some(10_000),
-        ..PomcpConfig::DEFAULT_LIMITS
-    });
+    let config = PomcpConfig::default()
+        .with_exploration(110.0)
+        .with_max_depth(60)
+        .with_budget(Limits {
+            max_trials: Some(10_000),
+            ..PomcpConfig::DEFAULT_LIMITS
+        });
 
     criterion.bench_function("pomcp tiger 10k simulations", |bencher| {
         bencher.iter(|| {
@@ -182,15 +180,13 @@ fn bench_pomcp(criterion: &mut Criterion) {
 
 /// 200 DESPOT explorations with 200 scenarios from the uniform Tiger belief.
 fn bench_despot(criterion: &mut Criterion) {
-    let config = DespotConfig {
-        scenarios: 200,
-        max_depth: 40,
-        ..DespotConfig::default()
-    }
-    .with_budget(Limits {
-        max_trials: Some(200),
-        ..DespotConfig::DEFAULT_LIMITS
-    });
+    let config = DespotConfig::default()
+        .with_scenarios(200)
+        .with_max_depth(40)
+        .with_budget(Limits {
+            max_trials: Some(200),
+            ..DespotConfig::DEFAULT_LIMITS
+        });
 
     criterion.bench_function("despot tiger 200 explorations", |bencher| {
         bencher.iter(|| {

@@ -21,17 +21,15 @@ const SEEDS: [u64; 4] = [0, 1, 2, 3];
 
 /// A POMCP configuration for returns spanning `range`, with `simulations` simulations.
 fn pomcp_config(seed: u64, range: f64, simulations: u64) -> PomcpConfig {
-    PomcpConfig {
-        discount: DISCOUNT,
-        exploration: range,
-        max_depth: 60,
-        seed,
-        ..PomcpConfig::default()
-    }
-    .with_budget(Limits {
-        max_trials: Some(simulations),
-        ..PomcpConfig::DEFAULT_LIMITS
-    })
+    PomcpConfig::default()
+        .with_discount(DISCOUNT)
+        .with_exploration(range)
+        .with_max_depth(60)
+        .with_seed(seed)
+        .with_budget(Limits {
+            max_trials: Some(simulations),
+            ..PomcpConfig::DEFAULT_LIMITS
+        })
 }
 
 /// From the uniform belief, opening a door has expected reward
@@ -150,18 +148,9 @@ fn pomcp_validates_its_input() {
     );
 
     for config in [
-        PomcpConfig {
-            discount: 0.0,
-            ..PomcpConfig::default()
-        },
-        PomcpConfig {
-            exploration: f64::NAN,
-            ..PomcpConfig::default()
-        },
-        PomcpConfig {
-            max_depth: 0,
-            ..PomcpConfig::default()
-        },
+        PomcpConfig::default().with_discount(0.0),
+        PomcpConfig::default().with_exploration(f64::NAN),
+        PomcpConfig::default().with_max_depth(0),
     ] {
         assert!(matches!(
             pomcp(&Tiger, &[true], UniformRandom, config),
@@ -172,17 +161,15 @@ fn pomcp_validates_its_input() {
 
 /// A DESPOT configuration with `explorations` explorations.
 fn despot_config(seed: u64, explorations: u64) -> DespotConfig {
-    DespotConfig {
-        discount: DISCOUNT,
-        scenarios: 200,
-        max_depth: 40,
-        seed,
-        ..DespotConfig::default()
-    }
-    .with_budget(Limits {
-        max_trials: Some(explorations),
-        ..DespotConfig::DEFAULT_LIMITS
-    })
+    DespotConfig::default()
+        .with_discount(DISCOUNT)
+        .with_scenarios(200)
+        .with_max_depth(40)
+        .with_seed(seed)
+        .with_budget(Limits {
+            max_trials: Some(explorations),
+            ..DespotConfig::DEFAULT_LIMITS
+        })
 }
 
 /// Plans for Tiger from a belief with `left` of `total` particles on the left.
@@ -298,10 +285,7 @@ fn despot_is_deterministic() {
 /// policy's action.
 #[test]
 fn despot_with_huge_regularization_follows_the_default_policy() {
-    let config = DespotConfig {
-        regularization: 1e9,
-        ..despot_config(0, 500)
-    };
+    let config = despot_config(0, 500).with_regularization(1e9);
     let plan = despot(
         &Tiger,
         &tiger_belief(1, 2),
@@ -344,26 +328,11 @@ fn despot_validates_its_input() {
     ));
 
     for config in [
-        DespotConfig {
-            scenarios: 0,
-            ..DespotConfig::default()
-        },
-        DespotConfig {
-            regularization: -1.0,
-            ..DespotConfig::default()
-        },
-        DespotConfig {
-            xi: 1.0,
-            ..DespotConfig::default()
-        },
-        DespotConfig {
-            target_gap: f64::NAN,
-            ..DespotConfig::default()
-        },
-        DespotConfig {
-            discount: 1.5,
-            ..DespotConfig::default()
-        },
+        DespotConfig::default().with_scenarios(0),
+        DespotConfig::default().with_regularization(-1.0),
+        DespotConfig::default().with_xi(1.0),
+        DespotConfig::default().with_target_gap(f64::NAN),
+        DespotConfig::default().with_discount(1.5),
     ] {
         assert!(matches!(
             despot(&Tiger, &[true], UniformRandom, bound, config),
@@ -401,11 +370,9 @@ fn tree_planners_report_progress_without_changing_the_plan() {
         &Tiger,
         &tiger_belief(1, 2),
         UniformRandom,
-        PomcpConfig {
-            progress_interval: Some(500),
-            ..config
-        }
-        .with_observer(observer_fn(|event| events.push(event))),
+        config
+            .with_progress_interval(Some(500))
+            .with_observer(observer_fn(|event| events.push(event))),
     )
     .expect("valid input");
     let plain = pomcp(&Tiger, &tiger_belief(1, 2), UniformRandom, config).expect("valid input");
@@ -425,10 +392,7 @@ fn tree_planners_report_progress_without_changing_the_plan() {
     assert_eq!(simulations, [500, 1_000, 1_500, 2_000]);
 
     let mut gaps = Vec::new();
-    let config = DespotConfig {
-        progress_interval: Some(100),
-        ..despot_config(5, 300)
-    };
+    let config = despot_config(5, 300).with_progress_interval(Some(100));
     let observed = despot(
         &Tiger,
         &tiger_belief(1, 2),
@@ -510,21 +474,16 @@ fn pomcp_exploration_constants() {
             &Tiger,
             &tiger_belief(1, 2),
             AlwaysListen,
-            PomcpConfig {
-                exploration: c,
-                ..base
-            },
+            base.with_exploration(c),
         )
         .expect("valid input");
         assert_eq!(plan.action, TigerAction::Listen, "seed {seed}");
     }
 
-    let config = PomcpConfig {
-        discount: 0.5,
-        max_depth: 3,
-        ..PomcpConfig::default()
-    }
-    .with_reward_range(-100.0, 10.0);
+    let config = PomcpConfig::default()
+        .with_discount(0.5)
+        .with_max_depth(3)
+        .with_reward_range(-100.0, 10.0);
     assert!((config.exploration - 110.0 * 1.75).abs() < 1e-12);
     assert!(matches!(
         pomcp_exploration(&Tiger, &tiger_belief(1, 2), AlwaysListen, &config, 0),
