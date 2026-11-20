@@ -10,8 +10,10 @@ use crate::error::Error;
 pub enum DeadEnds {
     /// Dead ends cost infinity (the "fragile" SSP semantics).
     ///
-    /// Exact when a proper policy exists from the initial state. Otherwise the initial value
-    /// is infinite and the policy has no action there.
+    /// Exact when a proper policy exists from the initial state. If none exists, value
+    /// iteration returns an infinite initial value and no action there. LRTDP does the same
+    /// when every dead end it meets has no actions; if it meets a cycle that never reaches a
+    /// goal, its values rise forever and only the [`Config::budget`] stops it.
     #[default]
     Infinite,
     /// Every non-goal state may give up at this finite, non-negative cost.

@@ -37,6 +37,14 @@ use crate::space::{Id, Problem, Space};
 /// probability 1. See `docs/design.md`, section "Convergence criterion", for the exact
 /// guarantee and the bound on `V*(initial) - V(initial)`.
 ///
+/// # Termination
+///
+/// Under [`DeadEnds::Infinite`](crate::DeadEnds::Infinite), if no proper policy exists from
+/// `initial` and a cycle that never reaches a goal is reachable, the values rise forever: with
+/// the default unlimited budget, the call does not return. Use
+/// [`DeadEnds::Penalty`](crate::DeadEnds::Penalty) or a budget when that can happen. Zero-cost
+/// cycles violate the SSP assumptions and are not detected.
+///
 /// Only the states the run touched are stored. One seed gives identical results on every
 /// run.
 ///

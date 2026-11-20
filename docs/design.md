@@ -58,6 +58,10 @@ Discounted MDPs are optional. A discount `gamma < 1` is an SSP in disguise (ever
 moves to an absorbing goal with probability `1 - gamma`), so it can be added later as an
 adapter over the `Mdp` trait without touching the algorithms.
 
+Costs and values are `f64`, not generic over `heuristic-search`'s `Cost` trait: values
+are expectations, which are fractional even when every cost is an integer, so an integer
+cost type would be converted at the first backup anyway.
+
 ### Traits
 
 ```rust
@@ -94,8 +98,9 @@ picks one of two semantics through `DeadEnds`:
 
 - `DeadEnds::Infinite` (default, the "fragile" SSP semantics). Dead ends cost infinity, so
   any action that reaches one with positive probability has infinite Q-value. The answer
-  is exact when a proper policy from `s0` exists. If none exists, `V(s0)` is infinite and
-  the policy is empty at `s0`. The third kind of dead end is only detected by value
+  is exact when a proper policy from `s0` exists. If none exists, value iteration returns
+  an infinite `V(s0)` and no action at `s0`; LRTDP does too when the dead ends it meets
+  are of the first two kinds. The third kind of dead end is only detected by value
   iteration (through an almost-sure reachability pre-pass); LRTDP sees it as values that
   keep rising. If such a trap is avoidable, the trial length limit lets LRTDP climb out of
   it and converge; if no proper policy exists from `s0` and a trap cycle is reachable,
@@ -117,9 +122,10 @@ successors in one outcome list are allowed and act as their summed probability.
 
 Exact rationals were considered and rejected for now:
 
-- Bellman backups are sums of products of probabilities and values. Values are expected
-  costs, irrational limits of iteration, so rational arithmetic would only move the
-  rounding into the value side or let denominators grow without bound.
+- With rational inputs `V*` is rational (it solves the linear system of the optimal
+  policy), but iterative algorithms only reach it in the limit, and the denominators of the
+  iterates grow with every backup. Exact iteration would be slow without being exact;
+  an exact answer needs a linear solve, which is a different algorithm.
 - The convergence tests are epsilon-based anyway (residual <= epsilon), which absorbs the
   `1e-16` relative error of an `f64` backup.
 - An input format with decimal probabilities (`0.1`) is not exactly representable in
@@ -315,6 +321,9 @@ overestimates are allowed (they only void the optimality bound). Neither panics.
   written for one works with the other.
 - `heuristic-search::Budget` and `Stats` have the same role as this crate's `Budget`; a
   shared budget trait would let callers reuse their clock-based budget.
+- `heuristic-search` is generic over `Cost`; this crate fixes `f64`. A shared heuristic
+  trait must therefore stay generic in `C`, and integer-cost heuristics need a conversion
+  adapter (`u32 -> f64` is lossless).
 - `planning-heuristics` could provide determinization-based heuristics (all-outcomes
   determinization plus a classical heuristic), which are admissible for SSPs. That needs a
   deterministic view of an MDP, which is an adapter in this crate, not a `sas-plus`

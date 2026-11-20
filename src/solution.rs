@@ -75,7 +75,8 @@ impl<S, A> Solution<S, A> {
 
     /// The value of the initial state: the expected cost to reach a goal.
     ///
-    /// Infinite if no proper policy exists under [`DeadEnds::Infinite`](crate::DeadEnds).
+    /// Infinite if no proper policy exists under [`DeadEnds::Infinite`](crate::DeadEnds) and
+    /// the run converged (see that variant for when LRTDP does).
     #[must_use]
     pub fn initial_value(&self) -> f64 {
         self.space.node(self.initial).value
