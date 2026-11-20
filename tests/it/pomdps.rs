@@ -205,6 +205,17 @@ pub fn tiger_belief(left: usize, total: usize) -> Vec<bool> {
     (0..total).map(|i| i < left).collect()
 }
 
+/// An upper bound on the discounted return of [`RockSample`] from `state`: every good rock
+/// sampled and the exit reached, without discounting.
+pub fn rock_upper_bound(state: &RockState) -> f64 {
+    let good = state.good.iter().filter(|&&g| g).count();
+
+    10.0 * f64::from(u32::try_from(good).expect("few rocks")) + 10.0
+}
+
+/// An upper bound on the discounted return of [`Tiger`]: +10 at every step.
+pub const TIGER_UPPER_BOUND: f64 = 10.0 / (1.0 - DISCOUNT);
+
 /// The usual Tiger rollout policy: always listen. Random rollouts open doors at an expected
 /// -45 per step, which buries the first step's difference under rollout noise.
 pub struct AlwaysListen;

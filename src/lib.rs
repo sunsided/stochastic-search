@@ -1,7 +1,7 @@
 //! # Stochastic search
 //!
 //! Planning under probabilistic outcomes: value iteration, RTDP, labeled RTDP and iLAO* for
-//! fully observable problems.
+//! fully observable problems; POMCP and DESPOT for partially observable ones.
 //!
 //! A problem is a stochastic shortest path (SSP) problem: reach a goal state with minimal
 //! expected total cost, where every action has a cost and a probability distribution over
@@ -11,6 +11,10 @@
 //! [`heuristic_fn`]). Every algorithm takes
 //! a [`Config`] and returns a [`Solution`]: a value function and a greedy policy, plus a
 //! [`Status`] and [`Stats`].
+//!
+//! Partially observable problems are generative models ([`Pomdp`]): a step samples successor,
+//! observation and reward from a `rand_core` generator. The online planners [`pomcp()`] and
+//! [`despot()`] take a particle belief and return a [`Plan`] for one decision.
 //!
 //! The crate is `no_std` and needs only `alloc`.
 //!
@@ -23,6 +27,10 @@
 //! - [`ilao_star()`]: improved LAO* (Hansen and Zilberstein 2001). Grows the best partial
 //!   solution graph in depth-first passes; no sampling.
 //! - [`value_iteration()`]: value iteration over every reachable state. The exact reference.
+//! - [`pomcp()`]: partially observable Monte-Carlo planning (Silver and Veness 2010). UCT
+//!   over action-observation histories with rollouts.
+//! - [`despot()`]: anytime regularized DESPOT (Somani et al. 2013, Ye et al. 2017). Bound
+//!   guided search over a tree of `K` determinized scenarios.
 //!
 //! ## Dead ends
 //!
@@ -76,7 +84,8 @@
 //! ## Planned scope
 //!
 //! - AND/OR heuristic search: LAO* (the one-tip-at-a-time variant), CG-iLAO*
-//! - Belief space: POMCP, DESPOT
+//! - Bounded RTDP (upper and lower bounds for an anytime gap)
+//! - Belief tracking between POMDP decisions (POMCP's particle reinvigoration, tree reuse)
 //!
 //! See `docs/design.md` in the repository for the design and milestones.
 //!
@@ -93,6 +102,7 @@ extern crate alloc;
 
 mod budget;
 mod config;
+mod despot;
 mod error;
 mod ilao;
 mod lrtdp;
@@ -109,6 +119,7 @@ mod value_iteration;
 
 pub use budget::{Budget, Limits, Stats};
 pub use config::{Config, DeadEnds};
+pub use despot::{DespotConfig, despot};
 pub use error::{Error, PROBABILITY_TOLERANCE};
 pub use ilao::ilao_star;
 pub use lrtdp::lrtdp;

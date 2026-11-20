@@ -1,15 +1,18 @@
-//! POMCP on Tiger and a one-rock `RockSample`: the known-good action over several seeds.
+//! POMCP and DESPOT on Tiger and a one-rock `RockSample`: the known-good action over
+//! several seeds.
 //!
 //! The expected actions are derived by hand in each test's docs, with their margins, so
 //! they do not depend on the planner under test. The rollout policies are the usual
 //! domain defaults (always listen, head east); uniformly random rollouts drown Tiger's
 //! first-step difference in noise.
 
-use stochastic_search::{Error, Limits, PomcpConfig, UniformRandom, pomcp};
+use stochastic_search::{
+    DespotConfig, Error, Limits, Plan, PomcpConfig, Status, UniformRandom, despot, pomcp,
+};
 
 use crate::pomdps::{
-    AlwaysListen, DISCOUNT, HeadEast, RockAction, Tiger, TigerAction, one_rock, one_rock_belief,
-    tiger_belief,
+    AlwaysListen, DISCOUNT, HeadEast, RockAction, TIGER_UPPER_BOUND, Tiger, TigerAction, one_rock,
+    one_rock_belief, rock_upper_bound, tiger_belief,
 };
 
 /// The seeds every planner test runs with.
@@ -159,6 +162,180 @@ fn pomcp_validates_its_input() {
     ] {
         assert!(matches!(
             pomcp(&Tiger, &[true], UniformRandom, config),
+            Err(Error::InvalidConfig { .. })
+        ));
+    }
+}
+
+/// A DESPOT configuration with `explorations` explorations.
+fn despot_config(seed: u64, explorations: u64) -> DespotConfig {
+    DespotConfig {
+        discount: DISCOUNT,
+        scenarios: 200,
+        max_depth: 40,
+        seed,
+        ..DespotConfig::default()
+    }
+    .with_budget(Limits {
+        max_trials: Some(explorations),
+        ..DespotConfig::DEFAULT_LIMITS
+    })
+}
+
+/// Plans for Tiger from a belief with `left` of `total` particles on the left.
+fn despot_tiger(left: usize, total: usize, seed: u64) -> Plan<TigerAction> {
+    despot(
+        &Tiger,
+        &tiger_belief(left, total),
+        AlwaysListen,
+        |_: &bool| TIGER_UPPER_BOUND,
+        despot_config(seed, 2_000),
+    )
+    .expect("valid input")
+}
+
+/// As [`pomcp_listens_to_the_tiger_first`], for DESPOT.
+#[test]
+fn despot_listens_to_the_tiger_first() {
+    for seed in SEEDS {
+        assert_eq!(
+            despot_tiger(1, 2, seed).action,
+            TigerAction::Listen,
+            "seed {seed}"
+        );
+    }
+}
+
+/// As [`pomcp_opens_the_far_door_when_confident`], for DESPOT. The recommendation goes by
+/// lower bounds, and opening resets the problem into a subtree that needs explorations of
+/// its own before its lower bound beats listening; 500 explorations are not always enough.
+#[test]
+fn despot_opens_the_far_door_when_confident() {
+    for seed in SEEDS {
+        let plan = despot_tiger(199, 200, seed);
+        assert_eq!(plan.action, TigerAction::OpenRight, "seed {seed}");
+    }
+}
+
+/// As [`pomcp_checks_an_uncertain_rock`], for DESPOT.
+#[test]
+fn despot_checks_an_uncertain_rock() {
+    let model = one_rock();
+    for seed in SEEDS {
+        let plan = despot(
+            &model,
+            &one_rock_belief(50, 100),
+            HeadEast,
+            rock_upper_bound,
+            despot_config(seed, 500),
+        )
+        .expect("valid input");
+
+        assert_eq!(plan.action, RockAction::Check(0), "seed {seed}");
+    }
+}
+
+/// As [`pomcp_leaves_a_bad_rock`], for DESPOT. The default policy already heads east, so
+/// the bounds close quickly and the search converges.
+#[test]
+fn despot_leaves_a_bad_rock() {
+    let model = one_rock();
+    for seed in SEEDS {
+        let plan = despot(
+            &model,
+            &one_rock_belief(0, 10),
+            HeadEast,
+            rock_upper_bound,
+            despot_config(seed, 500),
+        )
+        .expect("valid input");
+
+        assert_eq!(plan.action, RockAction::East, "seed {seed}");
+    }
+}
+
+/// The same seed gives the same plan, bit for bit.
+#[test]
+fn despot_is_deterministic() {
+    let (first, second) = (despot_tiger(1, 2, 5), despot_tiger(1, 2, 5));
+
+    assert_eq!(first.action, second.action);
+    assert_eq!(first.value.to_bits(), second.value.to_bits());
+    assert_eq!(first.stats, second.stats);
+}
+
+/// A regularization that no gap can pay for leaves a one-node tree and the default
+/// policy's action.
+#[test]
+fn despot_with_huge_regularization_follows_the_default_policy() {
+    let config = DespotConfig {
+        regularization: 1e9,
+        ..despot_config(0, 500)
+    };
+    let plan = despot(
+        &Tiger,
+        &tiger_belief(1, 2),
+        UniformRandom,
+        |_: &bool| TIGER_UPPER_BOUND,
+        config,
+    )
+    .expect("valid input");
+
+    assert_eq!(plan.status, Status::Converged);
+    assert_eq!(plan.stats.trials, 0);
+    assert_eq!(plan.stats.states, 1);
+}
+
+/// Bad settings, empty beliefs and NaN bounds are errors, not panics.
+#[test]
+fn despot_validates_its_input() {
+    let bound = |_: &bool| TIGER_UPPER_BOUND;
+    let empty: [bool; 0] = [];
+    assert_eq!(
+        despot(
+            &Tiger,
+            &empty,
+            UniformRandom,
+            bound,
+            DespotConfig::default()
+        ),
+        Err(Error::EmptyBelief)
+    );
+    assert!(matches!(
+        despot(
+            &Tiger,
+            &[true],
+            UniformRandom,
+            |_: &bool| f64::NAN,
+            DespotConfig::default()
+        ),
+        Err(Error::InvalidHeuristic { .. })
+    ));
+
+    for config in [
+        DespotConfig {
+            scenarios: 0,
+            ..DespotConfig::default()
+        },
+        DespotConfig {
+            regularization: -1.0,
+            ..DespotConfig::default()
+        },
+        DespotConfig {
+            xi: 1.5,
+            ..DespotConfig::default()
+        },
+        DespotConfig {
+            target_gap: f64::NAN,
+            ..DespotConfig::default()
+        },
+        DespotConfig {
+            discount: 1.5,
+            ..DespotConfig::default()
+        },
+    ] {
+        assert!(matches!(
+            despot(&Tiger, &[true], UniformRandom, bound, config),
             Err(Error::InvalidConfig { .. })
         ));
     }

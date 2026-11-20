@@ -6,7 +6,10 @@ Planning under probabilistic outcomes: LAO*, iLAO*, RTDP, LRTDP, POMCP and DESPO
 
 - Implemented: value iteration, RTDP, labeled RTDP (LRTDP) and iLAO* for stochastic
   shortest path problems, with infinite or finite-penalty dead ends
-- Planned: one-tip LAO*, CG-iLAO*, Bounded RTDP; belief space (POMCP, DESPOT)
+- Implemented: a generative POMDP model with one-shot online planners POMCP and anytime
+  regularized DESPOT (AR-DESPOT) over particle beliefs
+- Planned: one-tip LAO*, CG-iLAO*, Bounded RTDP; belief tracking and tree reuse between
+  POMDP decisions
 
 See [docs/design.md](docs/design.md) for the model, guarantees and milestones.
 

@@ -1,7 +1,7 @@
 //! The generative POMDP model ([`Pomdp`], [`Step`]), rollout policies ([`RolloutPolicy`],
 //! [`UniformRandom`]) and the result of an online planning call ([`Plan`]).
 //!
-//! The belief-space planners [`pomcp`](crate::pomcp()) and DESPOT (planned)
+//! The belief-space planners [`pomcp`](crate::pomcp()) and [`despot`](crate::despot())
 //! never see transition or observation probabilities. They only sample: given a hidden
 //! state and an action, the model draws a successor, an observation and a reward from a
 //! caller-visible random generator. Beliefs are particle sets: a slice of states, each an
@@ -166,7 +166,7 @@ pub struct Plan<A> {
     /// The recommended action.
     pub action: A,
     /// The planner's estimate of the recommended action's value from the given belief. See
-    /// [`pomcp`](crate::pomcp()) and DESPOT (planned) for what it means for each.
+    /// [`pomcp`](crate::pomcp()) and [`despot`](crate::despot()) for what it means for each.
     pub value: f64,
     /// [`Status::Converged`] if the planner's own stopping rule fired (DESPOT's bound gap),
     /// [`Status::BudgetExhausted`] if the budget stopped it. POMCP has no stopping rule, so

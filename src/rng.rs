@@ -90,6 +90,14 @@ pub fn unit_interval<R: Rng + ?Sized>(rng: &mut R) -> f64 {
     bits * SCALE
 }
 
+/// Derives the seed of an independent stream from `seed` and two stream coordinates, by
+/// running each coordinate through `SplitMix64`'s output mix in turn.
+pub(crate) fn derive_seed(seed: u64, a: u64, b: u64) -> u64 {
+    let first = SplitMix64::new(seed ^ a.wrapping_mul(0xD1B5_4A32_D192_ED03)).next_u64();
+
+    SplitMix64::new(first ^ b.wrapping_mul(0xA24B_AED4_963E_E407)).next_u64()
+}
+
 #[cfg(test)]
 mod tests {
     use super::SplitMix64;
@@ -112,5 +120,25 @@ mod tests {
             let u = rng.next_unit();
             assert!((0.0..1.0).contains(&u));
         }
+    }
+
+    /// Derived streams differ per coordinate and repeat for equal ones.
+    #[test]
+    fn derived_seeds_are_distinct_and_stable() {
+        use super::derive_seed;
+
+        let seeds = [
+            derive_seed(1, 0, 0),
+            derive_seed(1, 1, 0),
+            derive_seed(1, 0, 1),
+            derive_seed(2, 0, 0),
+        ];
+        for (i, a) in seeds.iter().enumerate() {
+            for b in &seeds[i + 1..] {
+                assert_ne!(a, b);
+            }
+        }
+
+        assert_eq!(derive_seed(1, 1, 0), seeds[1]);
     }
 }

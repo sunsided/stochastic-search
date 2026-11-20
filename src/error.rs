@@ -37,7 +37,7 @@ pub enum Error<S> {
         sum: f64,
     },
     /// The heuristic estimated NaN or negative infinity, or a POMDP upper bound (see
-    /// DESPOT (planned)) is NaN.
+    /// [`despot`](crate::despot())) is NaN.
     InvalidHeuristic {
         /// The state that was estimated.
         state: S,

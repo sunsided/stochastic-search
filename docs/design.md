@@ -1,6 +1,6 @@
 # stochastic-search: design
 
-Status: draft, written with milestone 1 on branch `draft/initial`.
+Status: draft on branch `draft/initial`; milestones 1, 2 (RTDP, iLAO*) and 4 (one-shot POMCP and DESPOT) implemented.
 
 ## Goal and scope
 
@@ -13,8 +13,7 @@ In scope, in milestone order (see [Milestones](#milestones)):
 - reference: value iteration (VI) on the reachable state space, used as a test oracle;
 - real-time dynamic programming: RTDP, labeled RTDP (LRTDP);
 - AND/OR heuristic search: LAO*, improved LAO* (iLAO*), CG-iLAO*;
-- later, belief space: POMCP, DESPOT, over a separately defined belief and observation
-  model.
+- belief space: POMCP, DESPOT, over a separate generative POMDP model.
 
 Out of scope: deterministic graph search (`heuristic-search`), factored SAS+ models
 (`sas-plus`), PDDL front ends. Probabilistic PDDL (PPDDL, RDDL) grounding belongs to a
@@ -25,6 +24,9 @@ Constraints:
 - `no_std` + `alloc`. Time limits come from the caller through a budget.
 - No dependency on `sas-plus`: its transitions are deterministic and cannot express a
   distribution over successors. No dependency on other ecosystem crates yet.
+- External dependencies: `hashbrown` (state interning), `libm` (`sqrt`, `log` under
+  `no_std`), `rand_core` without default features (the generator trait of the POMDP
+  model).
 - `forbid(unsafe_code)`, pedantic clippy, docs on every item.
 
 ## Model: stochastic shortest path (SSP)
@@ -299,24 +301,21 @@ policies or the status.
 ### Seeded deterministic sampling
 
 Trials sample successors with an internal SplitMix64 generator seeded from
-`Config::seed`. An own generator (a dozen lines) rather than `rand`:
+`Config::seed`. An own generator (a dozen lines) rather than a `rand` generator:
 
 - the sequence is fixed by this crate, not by a dependency's version, so a seed reproduces
   a run across releases;
-- no dependency, `no_std` without features.
+- no dependency beyond `rand_core`'s trait, `no_std` without features.
+
+The generator implements `rand_core`'s `TryRng` (hence `Rng`), because the POMDP model
+draws from a caller-visible generator; the trait fixes the interface, not the sequence.
+`unit_interval` converts generator output to `[0, 1)` for model authors, since
+`rand_core` has no float helpers.
 
 Sampling draws `u` in `[0, 1)` with 53 random bits and walks the cumulative probabilities
 of the cached outcome list in emission order. If rounding leaves `u` past the last bucket,
 the last outcome is taken. Together with insertion-ordered ids and first-wins tie
 breaking, one seed gives bit-identical values, policies and statistics.
-
-Plain RTDP (`rtdp`) is the same run without labels: trials never unwind through
-`checkSolved`. As its stopping rule, `checkSolved` runs on `s0` alone between trials, without
-the repair backups, and labels the envelope when it passes. A check costs about one
-evaluation per envelope state, so it only runs once at least as many backups happened since
-the last check as that check took; checks then take at most half of a run's backups. Since
-the passing check is LRTDP's, a converged RTDP run has LRTDP's guarantee. Dead-end proofs
-and events are shared too.
 
 ### LAO* and iLAO* (milestone 2: iLAO*)
 
@@ -350,13 +349,73 @@ greedy (action pruning in the spirit of "constraint generation"). It needs per-s
 bounds on Q-values and an extensible action list, which the arena layout must allow.
 Exact algorithm details are to be checked against the paper before milestone 3.
 
-### Belief space (later)
+### Belief space (milestone 4)
 
-POMCP (Silver and Veness 2010) and DESPOT (Somani, Ye, Hsu and Lee 2013) plan in belief
-space with sampled observations. They need an observation model and a belief
-representation that the MDP traits do not have. They get a separate trait set
-(`Pomdp: actions, sample transition, sample observation`) defined then; if that set grows
-large it may move into its own crate. Nothing in milestone 1 depends on it.
+POMCP (Silver and Veness 2010) and DESPOT (Somani, Ye, Hsu and Lee 2013; Ye et al. 2017)
+plan in belief space with sampled observations. They use a separate model, not `Mdp`:
+
+```rust
+pub trait Pomdp {
+    type State; type Action; type Observation;
+    fn actions(&self, emit: impl FnMut(Self::Action));        // same in every state
+    fn step<R: Rng + ?Sized>(&self, state: &Self::State, action: &Self::Action,
+                             rng: &mut R) -> Step<Self::State, Self::Observation>;
+}
+pub struct Step<S, O> { pub state: S, pub observation: O, pub reward: f64, pub terminal: bool }
+pub trait RolloutPolicy<S> { fn action<R: Rng + ?Sized>(&mut self, state: &S,
+                                                         actions: usize, rng: &mut R) -> usize; }
+```
+
+- A generative model, because both planners only sample. Rewards are maximized with
+  discount `gamma`, as in both papers, instead of the SSP's costs: the benchmark problems
+  (Tiger, RockSample) are stated that way and an SSP view would need a goal.
+- Actions do not depend on the state: the agent cannot tell states apart. Planners refer to
+  actions by emission position.
+- Rollout and default policies, and DESPOT's upper bound, are separate values, as the
+  heuristic is for SSPs. `UniformRandom` is the knowledge-free policy. In Tiger at depth
+  60 it buries the first step's difference under rollout noise (random opens cost 45 in
+  expectation); the tests use the usual domain policies (always listen, head east).
+- Beliefs are particle slices with equal weights. Both planners are one-shot: belief in,
+  `Plan { action, value, status, stats }` out. Belief tracking between decisions (POMCP's
+  in-tree particle filter, reinvigoration, tree reuse) is left to the caller for now.
+- Budgets reuse `Budget` over `Stats`: `trials` counts simulations or explorations,
+  `states` tree nodes, `backups` value updates. Default limits are finite (`10^4` POMCP
+  simulations, `10^3` DESPOT explorations). The `Observer` is not wired into them yet.
+- Errors reuse `Error`: `InvalidReward`, `NoActions`, `EmptyBelief`, `InvalidConfig`, and
+  `InvalidHeuristic` for a NaN or infinite DESPOT upper bound.
+
+POMCP: UCB1 (`Q + c * sqrt(ln N / n)`, untried actions first) over histories; a new history
+is added and evaluated by one rollout; the return is averaged into every action node on the
+path. Observation children are found by linear scan with `==`. The recommendation is the
+root action with the highest average, not the UCB score. The exploration constant must be
+scaled to the return range by the caller.
+
+DESPOT follows the anytime algorithm of Ye et al. (2017, Algorithms 1 to 6), which the
+2013 paper calls AR-DESPOT (the name is from the 2013 paper as recalled; the 2017 paper
+just says "anytime DESPOT"):
+
+- `K` scenarios: a start state drawn from the belief, and a random stream per depth. The
+  step of scenario `k` at depth `d` uses a fresh generator seeded from `(seed, k, 2d)`, the
+  default policy's choice there one from `(seed, k, 2d + 1)`. Streams do not depend on the
+  action or on the order of expansions, which is what determinizes a scenario;
+- per node: `U(b)` (average upper bound, raised to `L0(b)` if below), `L0(b)` (average
+  default-policy return), `l0 = |Phi_b| / K * gamma^depth * L0`, and the RWDU bounds
+  `mu0 = max(l0, |Phi_b| / K * gamma^depth * U - lambda)` and `ell0 = l0`;
+- backup: `rho(b, a) = gamma^depth * sum R / K - lambda`,
+  `mu(b) = max(l0, max_a rho + sum mu(child))`, the same for `ell`, and
+  `U(b) = max_a [avg R + gamma * sum |Phi_c| / |Phi_b| * U(c)]`;
+- explore: action by `mu(b, a)`, child by excess uncertainty
+  `E(b) = mu - ell - |Phi_b| / K * xi * (mu(b0) - ell(b0))`; stop when `E <= 0`, at a
+  pruned node, or beyond depth `D` (then `MakeDefault`: `U = L0`, `mu = ell = l0`, fixed);
+- prune: a node is blocked if an ancestor `b'` has
+  `|Phi_b'| / K * gamma^depth(b') * (U(b') - L0(b')) <= lambda * (depth - depth(b'))`;
+  blocked nodes on the path are fixed to the default policy bottom-up;
+- recommendation: the root action with the best `ell(b0, a)`, or the default policy's
+  action (in the first scenario) if `l0(b0)` beats every action.
+
+Tests check `ell <= mu` at every node, a non-increasing root `mu`, a non-decreasing root
+`ell` without regularization, identical trees for one seed, and a one-node tree under a
+huge `lambda`.
 
 ## Error handling
 
@@ -377,7 +436,7 @@ overestimates are allowed (they only void the optimality bound). Neither panics.
 
 ## Testing strategy
 
-- Closed-form fixtures: a retry loop (`V = c / p`), a choice between a safe and a risky
+- Closed-form fixtures, solved by value iteration, LRTDP, RTDP and iLAO*: a retry loop (`V = c / p`), a choice between a safe and a risky
   action, dead ends under both semantics, a goal initial state.
 - An oracle that does not share code with the crate: test-side Bellman residuals and
   probability-1 reachability are computed from the generator's raw tables.
@@ -401,6 +460,9 @@ overestimates are allowed (they only void the optimality bound). Neither panics.
   slow solvable retry loop may report it but converges, with or without an observer to the
   same bits; progress follows its interval; the default observer is zero-sized and
   disabled at compile time.
+- Belief space: Tiger and a one-rock RockSample, with the expected first action and its
+  margin derived by hand in each test, over four seeds, for POMCP and DESPOT; determinism
+  per seed; input validation; DESPOT's bound invariants as unit tests.
 - Proptest case counts are fixed in code (64), so `cargo test` stays fast.
 
 ## Milestones
@@ -410,7 +472,8 @@ overestimates are allowed (they only void the optimality bound). Neither panics.
    as upper-bound variants if a consumer needs an anytime gap; one-tip LAO*.
 3. CG-iLAO*; policy evaluation utilities (exact evaluation of a fixed policy by linear
    solve or iteration); discounted MDP adapter.
-4. Belief-space trait set; POMCP; DESPOT. Decide then whether that becomes `pomdp-search`.
+4. Belief-space trait set; POMCP; DESPOT. (done, one-shot) Next: belief tracking and tree
+   reuse between decisions; decide whether this becomes `pomdp-search`.
 
 ## Cross-crate needs
 
@@ -444,3 +507,8 @@ overestimates are allowed (they only void the optimality bound). Neither panics.
 - Kolobov, Mausam, Weld. *A theory of goal-oriented MDPs with dead ends.* UAI 2012.
 - Silver, Veness. *Monte-Carlo planning in large POMDPs.* NeurIPS 2010.
 - Somani, Ye, Hsu, Lee. *DESPOT: Online POMDP planning with regularization.* NeurIPS 2013.
+- Ye, Somani, Hsu, Lee. *DESPOT: Online POMDP planning with regularization.* JAIR 58,
+  2017.
+- Kaelbling, Littman, Cassandra. *Planning and acting in partially observable stochastic
+  domains.* Artificial Intelligence 101, 1998. (Tiger)
+- Smith, Simmons. *Heuristic search value iteration for POMDPs.* UAI 2004. (RockSample)

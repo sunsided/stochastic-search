@@ -1,12 +1,13 @@
-//! Benchmarks for the hot paths: LRTDP trials on a corridor SSP and POMCP simulations on
-//! Tiger.
+//! Benchmarks for the hot paths: LRTDP trials on a corridor SSP, and POMCP simulations and
+//! DESPOT explorations on Tiger.
 
 use std::hint::black_box;
 
 use criterion::Criterion;
 use rand_core::Rng;
 use stochastic_search::{
-    Config, Limits, Mdp, PomcpConfig, Pomdp, RolloutPolicy, Step, Zero, lrtdp, pomcp, unit_interval,
+    Config, DespotConfig, Limits, Mdp, PomcpConfig, Pomdp, RolloutPolicy, Step, Zero, despot,
+    lrtdp, pomcp, unit_interval,
 };
 
 /// Runs every benchmark in this file with criterion's command-line flags.
@@ -15,6 +16,7 @@ fn main() {
 
     bench_lrtdp(&mut criterion);
     bench_pomcp(&mut criterion);
+    bench_despot(&mut criterion);
     criterion.final_summary();
 }
 
@@ -113,6 +115,28 @@ fn bench_pomcp(criterion: &mut Criterion) {
     criterion.bench_function("pomcp tiger 10k simulations", |bencher| {
         bencher.iter(|| {
             let plan = pomcp(&Tiger, &[true, false], Listen, config).expect("valid input");
+
+            black_box(plan.value)
+        });
+    });
+}
+
+/// 200 DESPOT explorations with 200 scenarios from the uniform Tiger belief.
+fn bench_despot(criterion: &mut Criterion) {
+    let config = DespotConfig {
+        scenarios: 200,
+        max_depth: 40,
+        ..DespotConfig::default()
+    }
+    .with_budget(Limits {
+        max_trials: Some(200),
+        ..DespotConfig::DEFAULT_LIMITS
+    });
+
+    criterion.bench_function("despot tiger 200 explorations", |bencher| {
+        bencher.iter(|| {
+            let plan = despot(&Tiger, &[true, false], Listen, |_: &bool| 200.0, config)
+                .expect("valid input");
 
             black_box(plan.value)
         });
