@@ -19,7 +19,7 @@ fn solve_both(table: &Table, dead_ends: DeadEnds) -> [Solution<usize, usize>; 2]
 
     [
         value_iteration(table, 0, &goal, config).expect("valid input"),
-        lrtdp(table, 0, &goal, &Zero, config).expect("valid input"),
+        lrtdp(table, 0, &goal, Zero, config).expect("valid input"),
     ]
 }
 
@@ -77,7 +77,7 @@ fn unavoidable_dead_end() {
     };
 
     for solution in solve_both(&table, DeadEnds::Infinite) {
-        assert!(solution.is_converged());
+        assert_eq!(solution.status(), Status::Unsolvable);
         assert_eq!(solution.initial_value(), f64::INFINITY);
         assert_eq!(solution.initial_action(), None);
     }
@@ -90,10 +90,10 @@ fn unavoidable_dead_end() {
     }
 }
 
-/// An unavoidable trap cycle under infinite dead-end cost: value iteration finds it by
-/// graph analysis; LRTDP sees ever-rising values and needs a budget to stop.
+/// An unavoidable trap cycle under infinite dead-end cost: both algorithms prove it by graph
+/// analysis, LRTDP after its trials get cut off, and with the default configuration.
 #[test]
-fn unavoidable_trap_cycle_needs_a_budget() {
+fn unavoidable_trap_cycle_is_unsolvable() {
     let table = Table {
         actions: vec![
             vec![action(1.0, &[(1, 0.5), (2, 0.5)])],
@@ -103,14 +103,37 @@ fn unavoidable_trap_cycle_needs_a_budget() {
         goal: 1,
     };
     let goal = |s: &usize| table.is_goal(*s);
-    let config = Config::default().with_budget(Limits::backups(10_000));
 
-    let exact = value_iteration(&table, 0, &goal, config).expect("valid input");
-    assert!(exact.is_converged());
+    let exact = value_iteration(&table, 0, &goal, Config::default()).expect("valid input");
+    assert_eq!(exact.status(), Status::Unsolvable);
     assert_eq!(exact.initial_value(), f64::INFINITY);
 
-    let bounded = lrtdp(&table, 0, &goal, &Zero, config).expect("valid input");
-    assert_eq!(bounded.status(), Status::BudgetExhausted);
+    let proven = lrtdp(&table, 0, &goal, Zero, Config::default()).expect("valid input");
+    assert_eq!(proven.status(), Status::Unsolvable);
+    assert_eq!(proven.initial_value(), f64::INFINITY);
+    assert_eq!(proven.initial_action(), None);
+}
+
+/// A short trial length limit proves the trap long before a generous budget runs out.
+#[test]
+fn trap_proof_does_not_need_the_budget() {
+    let table = Table {
+        actions: vec![
+            vec![action(1.0, &[(1, 0.5), (2, 0.5)])],
+            vec![],
+            vec![action(1.0, &[(2, 1.0)])],
+        ],
+        goal: 1,
+    };
+    let config = Config {
+        max_trial_length: 3,
+        ..Config::default()
+    }
+    .with_budget(Limits::backups(1_000_000));
+    let solution =
+        lrtdp(&table, 0, &|s: &usize| table.is_goal(*s), Zero, config).expect("valid input");
+
+    assert_eq!(solution.status(), Status::Unsolvable);
 }
 
 /// An avoidable trap cycle (the goal is unreachable from it) does not hang LRTDP under

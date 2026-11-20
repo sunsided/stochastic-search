@@ -1,7 +1,7 @@
 //! Property tests on random SSPs: LRTDP against value iteration and the raw-table oracle.
 
 use proptest::prelude::*;
-use stochastic_search::{Config, DeadEnds, Solution, Zero, lrtdp, value_iteration};
+use stochastic_search::{Config, DeadEnds, Solution, Zero, heuristic_fn, lrtdp, value_iteration};
 
 use crate::oracle::{determinization, optimal_values, policy_envelope, policy_is_proper, q_value};
 use crate::random::{Shape, ssp};
@@ -25,9 +25,9 @@ fn solve_lrtdp(table: &Table, h: &[f64], dead_ends: DeadEnds, seed: u64) -> Solu
         max_trial_length: 200,
         ..Config::default()
     };
-    let heuristic = |state: &usize| Some(h[*state]);
+    let heuristic = heuristic_fn(|state: &usize| Some(h[*state]));
 
-    lrtdp(table, 0, &|s: &usize| table.is_goal(*s), &heuristic, config).expect("valid input")
+    lrtdp(table, 0, &|s: &usize| table.is_goal(*s), heuristic, config).expect("valid input")
 }
 
 /// Solves `table` from state 0 with value iteration to near machine precision.
@@ -132,7 +132,7 @@ proptest! {
         let optimal = solve_vi(&table, DeadEnds::Infinite).initial_value();
         let epsilon = TOLERANCE * table.min_cost() / (2.0 * optimal.max(1.0));
         let config = Config { epsilon, seed, ..Config::default() };
-        let solution = lrtdp(&table, 0, &|s: &usize| table.is_goal(*s), &Zero, config).expect("valid input");
+        let solution = lrtdp(&table, 0, &|s: &usize| table.is_goal(*s), Zero, config).expect("valid input");
 
         prop_assert!(solution.is_converged());
         prop_assert!((solution.initial_value() - optimal).abs() <= TOLERANCE);
