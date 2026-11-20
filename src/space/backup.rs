@@ -35,7 +35,7 @@ impl<S, A> Space<S, A> {
     }
 
     /// Evaluates the Bellman equation at `id` under another value function, `value`, with
-    /// the rules of [`Space::bellman`]. BRTDP uses it for its upper bound.
+    /// the rules of [`Space::bellman`]. The bounded algorithms use it for their upper bound.
     pub(crate) fn bellman_under(&self, id: Id, value: impl Fn(Id) -> f64) -> Backup {
         if self.node(id).kind != Kind::Open {
             return Backup {

@@ -210,7 +210,10 @@ run) it is the last greedy action recorded. Value iteration records the greedy a
 its final sweep. `action` returns `None` at goals, dead ends, give-up states and states the
 algorithm never touched. BRTDP records the action greedy on its upper bound at each
 state's last backup; `upper_bound(&s)` returns that bound (and `None` for the other
-algorithms). Its envelope may contain states no trial backed up, without an action.
+algorithms). A fill pass after convergence backs up the envelope states no trial backed
+up, so the envelope has actions wherever they exist (unless the budget runs out). The pass
+is not bounded by the trials' work: under dense noise the upper-greedy envelope is every
+reachable state.
 
 ## Algorithms
 
@@ -384,8 +387,9 @@ highest `P * prio`, ends when `gap(s) - epsilon / 2 <= 0` or at depth `D`; `D` s
 `D0 = 10` and grows by `kD = 1.1` after a trial whose late updates (depth above `D / kD`)
 had an average quality `delta * W` at least that of the early ones (paper's values). The
 paper outputs the pessimistic-greedy policy, which is our upper-greedy one. The deterministic
-choice can starve a low-probability successor that holds the gap up (found on a random
-SSP: the run stalled for 10^7 backups), so after an FRTDP or VPI-RTDP trial that did not
+choice can stall (found on a random SSP: the bounds stopped changing for 10^7 backups,
+probably because a low-probability successor holding the gap up is never the
+highest-priority one), so after an FRTDP or VPI-RTDP trial that did not
 shrink the gap of `s0`, the shared run makes the next trial a plain BRTDP trial.
 
 VPI-RTDP (Sanner, Goetschalckx, Driessens, Shani 2009), in costs: values are uniform between

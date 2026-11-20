@@ -50,7 +50,7 @@ pub enum Error<S> {
     /// [`brtdp`](crate::brtdp()) estimated no finite value (`None` or infinity) for a state
     /// the lower bound does not prove to be a dead end.
     ///
-    /// BRTDP needs a finite upper bound wherever the optimal value is finite: an infinite
+    /// The bounded algorithms need a finite upper bound wherever the optimal value is finite: an infinite
     /// one on a cycle never becomes finite through backups. Give a finite upper estimate,
     /// return `None` from the lower bound too where the state is a dead end, or use
     /// [`DeadEnds::Penalty`](crate::DeadEnds::Penalty), whose penalty bounds every value.

@@ -1,7 +1,7 @@
 //! # Stochastic search
 //!
-//! Planning under probabilistic outcomes: value iteration, RTDP, labeled RTDP, BRTDP, FRTDP, VPI-RTDP, LAO* and
-//! iLAO* for
+//! Planning under probabilistic outcomes: value iteration, RTDP, labeled RTDP, BRTDP, FRTDP,
+//! VPI-RTDP, LAO* and iLAO* for
 //! fully observable problems; POMCP and DESPOT for partially observable ones.
 //!
 //! A problem is a stochastic shortest path (SSP) problem: reach a goal state with minimal

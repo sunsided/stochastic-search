@@ -5,13 +5,15 @@ pub use search_core::Budget;
 /// Counters collected during one run of an algorithm.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct Stats {
-    /// Bellman backups that wrote a value. The solved checks of LRTDP, RTDP and iLAO* also
+    /// Bellman backups that wrote a value. The solved checks of LRTDP, RTDP, LAO* and iLAO* also
     /// evaluate the Bellman equation; those evaluations count here too, since they cost the
     /// same.
     pub backups: u64,
-    /// LRTDP, RTDP and BRTDP trials started. Always `0` for value iteration and iLAO*.
+    /// LRTDP, RTDP, BRTDP, FRTDP and VPI-RTDP trials started. Always `0` for value iteration,
+    /// LAO* and iLAO*.
     pub trials: u64,
-    /// Value iteration sweeps over the state space, or iLAO* passes over the greedy graph.
+    /// Value iteration sweeps over the state space, iLAO* passes over the greedy graph, or LAO*
+    /// sweeps over ancestor sets and the solution graph.
     /// Always `0` for LRTDP and RTDP.
     pub sweeps: u64,
     /// States whose actions and outcomes were queried from the MDP.
@@ -25,7 +27,7 @@ pub struct Stats {
 /// Every algorithm asks its [`Budget`] (`search_core::Budget<Stats>`, implemented by
 /// `search-core` for every `FnMut(&Stats) -> bool`, which lets callers with a clock add a
 /// time limit, and here for `Limits`) before every Bellman backup, every LRTDP, RTDP or
-/// BRTDP trial, every iLAO* pass and every state expansion of value iteration's
+/// BRTDP, FRTDP or VPI-RTDP trial, every iLAO* pass, LAO* sweep and every state expansion of value iteration's
 /// enumeration, with the counters so far. So a run stopped by [`Limits::max_backups`]
 /// `= n` has performed exactly `n` backups.
 ///
@@ -56,7 +58,7 @@ pub struct Stats {
 pub struct Limits {
     /// Stop once this many Bellman backups have been performed. `None` is unbounded.
     pub max_backups: Option<u64>,
-    /// Stop once this many LRTDP, RTDP or BRTDP trials have been started. `None` is unbounded.
+    /// Stop once this many LRTDP, RTDP or bounded trials have been started. `None` is unbounded.
     pub max_trials: Option<u64>,
     /// Stop once this many states are stored. `None` is unbounded.
     ///

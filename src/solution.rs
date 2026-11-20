@@ -17,13 +17,14 @@ pub type SolveResult<M> =
 /// How a run ended.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Status {
-    /// The convergence criterion holds: for LRTDP, RTDP and iLAO*, the initial state is
+    /// The convergence criterion holds: for LRTDP, RTDP, LAO* and iLAO*, the initial state is
     /// labeled solved by the solved check; for value iteration, the last sweep's largest
-    /// residual was below epsilon; for BRTDP, the initial state's bounds are at most epsilon
+    /// residual was below epsilon; for BRTDP, FRTDP and VPI-RTDP, the initial state's bounds are at most
+    /// epsilon
     /// apart.
     Converged,
     /// The [`Budget`](crate::Budget) stopped the run first. Values and policy are the ones
-    /// reached so far and carry no guarantee, except that BRTDP's bounds still bracket the
+    /// reached so far and carry no guarantee, except that the bounds of BRTDP, FRTDP and VPI-RTDP still bracket the
     /// optimal values.
     BudgetExhausted,
     /// Proven: no policy reaches a goal with probability 1 from the initial state, so under
@@ -46,7 +47,8 @@ pub struct Solution<S, A> {
     status: Status,
     /// Counters of the run.
     stats: Stats,
-    /// BRTDP's upper bounds, indexed by [`Id`]; empty for the other algorithms.
+    /// The upper bounds of BRTDP, FRTDP and VPI-RTDP, indexed by [`Id`]; empty for the other
+    /// algorithms.
     upper: Vec<f64>,
 }
 
@@ -73,7 +75,7 @@ impl<S, A> Solution<S, A> {
         }
     }
 
-    /// Attaches BRTDP's upper bounds, one per stored state, indexed by [`Id`].
+    /// Attaches the upper bounds of a bounded run, one per stored state, indexed by [`Id`].
     pub(crate) fn with_upper(mut self, upper: Vec<f64>) -> Self {
         debug_assert_eq!(upper.len(), self.space.len(), "one upper bound per state");
         self.upper = upper;
@@ -138,8 +140,8 @@ impl<S, A> Solution<S, A> {
 impl<S: Hash + Eq, A> Solution<S, A> {
     /// The value of `state`, or `None` if the run never touched it.
     ///
-    /// For LRTDP, RTDP and iLAO*, values outside the policy's reachable states are only bounds (lower bounds
-    /// with an admissible heuristic), not converged values. For BRTDP this is the lower
+    /// For LRTDP, RTDP, LAO* and iLAO*, values outside the policy's reachable states are only
+    /// bounds (lower bounds with an admissible heuristic), not converged values. For the bounded algorithms this is the lower
     /// bound; see [`Solution::upper_bound`].
     #[must_use]
     pub fn value(&self, state: &S) -> Option<f64> {
@@ -149,7 +151,7 @@ impl<S: Hash + Eq, A> Solution<S, A> {
     /// The upper bound on the optimal value of `state`, for [`brtdp`](crate::brtdp()).
     ///
     /// `None` if the run never touched `state`, and always for the other algorithms. With
-    /// [`Solution::value`] as the lower bound, BRTDP brackets the optimal value of every
+    /// [`Solution::value`] as the lower bound, the bounded algorithms bracket the optimal value of every
     /// stored state; see [`brtdp`](crate::brtdp()), section "Guarantee".
     #[must_use]
     pub fn upper_bound(&self, state: &S) -> Option<f64> {
@@ -163,8 +165,9 @@ impl<S: Hash + Eq, A> Solution<S, A> {
     /// `None` at goals, dead ends, states where giving up is cheaper (under
     /// [`DeadEnds::Penalty`](crate::DeadEnds::Penalty)) and states the run never backed up.
     /// Every state reachable from the initial state under the policy of a converged run has
-    /// an action unless it is one of the first three. BRTDP's policy is greedy on its upper
-    /// bound and may lack actions in the envelope; see [`brtdp`](crate::brtdp()).
+    /// an action unless it is one of the first three. The policy of BRTDP, FRTDP and VPI-RTDP
+    /// is greedy on the upper bound; their fill pass gives a converged run the same
+    /// coverage (see [`brtdp`](crate::brtdp())).
     #[must_use]
     pub fn action(&self, state: &S) -> Option<&A> {
         self.space.find(state).and_then(|id| self.policy_of(id))

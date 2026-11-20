@@ -445,3 +445,35 @@ fn bounded_algorithms_at_a_goal() {
         assert_eq!(solution.stats().trials, 0);
     }
 }
+
+/// A state whose bounds are exact from the start is never backed up by a trial (its gap is
+/// 0), but the upper-greedy policy reaches it; the fill pass gives it its action.
+#[test]
+fn bounded_algorithms_fill_policy_gaps() {
+    // 0 --(1)--> 2 --(1)--> 1 (goal); the bounds at 2 are exact.
+    let table = Table {
+        actions: vec![
+            vec![action(1.0, &[(2, 1.0)])],
+            Vec::new(),
+            vec![action(1.0, &[(1, 1.0)])],
+        ],
+        goal: 1,
+    };
+    let exact_at_two = |s: &usize| Some(if *s == 2 { 1.0 } else { 0.0 });
+    let loose = |s: &usize| Some(if *s == 2 { 1.0 } else { 10.0 });
+    for algorithm in ALGORITHMS {
+        let solution = run(
+            algorithm,
+            &table,
+            0,
+            &retry_goal,
+            (heuristic_fn(exact_at_two), heuristic_fn(loose)),
+            Config::default(),
+        )
+        .expect("valid input");
+
+        assert!(solution.is_converged(), "{algorithm:?}");
+        assert_eq!(solution.initial_action(), Some(&0));
+        assert_eq!(solution.action(&2), Some(&0), "{algorithm:?}");
+    }
+}

@@ -108,9 +108,10 @@ impl<B, O> From<Config<B, O>> for FrtdpConfig<B, O> {
 ///
 /// # Deviation from the paper
 ///
-/// The deterministic choice can starve a successor: on a random SSP, trials cycled through
-/// states whose backups no longer changed anything while a low-probability successor that
-/// held the gap up was never chosen, and the run stalled. After an FRTDP trial that did not
+/// The deterministic choice can stall: on a random SSP of 11 states, the bounds stopped
+/// changing for 10^7 backups with the initial gap at about 1.2 (the probable cause is a
+/// low-probability successor that holds the gap up and is never the highest-priority one;
+/// the per-state priorities were not inspected). After an FRTDP trial that did not
 /// shrink the initial state's gap, the next trial therefore runs as a plain BRTDP trial
 /// (with `tau = 10`), which samples successors by gap with the seed of
 /// [`Config::seed`]. This at worst halves the speed of BRTDP and restores its convergence.

@@ -156,7 +156,10 @@ impl<B, O> From<Config<B, O>> for BrtdpConfig<B, O> {
 /// # Cost
 ///
 /// One backup updates both bounds and counts once in [`Stats::backups`](crate::Stats). The
-/// upper bounds take 8 more bytes per stored state. One seed gives identical results on
+/// upper bounds take 8 more bytes per stored state. The fill pass is not bounded by the
+/// trials' work: it expands every state of the upper-greedy envelope, which under dense
+/// noise is every state reachable from `initial`; the budget still caps it (and an exhausted
+/// budget during the pass keeps the converged status). One seed gives identical results on
 /// every run.
 ///
 /// # Errors
