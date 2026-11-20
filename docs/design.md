@@ -74,7 +74,8 @@ pub trait Mdp {
 }
 
 pub trait Goal<S> { fn is_goal(&self, state: &S) -> bool; }               // + impl for Fn(&S) -> bool
-pub trait Heuristic<S, C> { fn estimate(&self, state: &S) -> Option<C>; } // + impl for Fn(&S) -> Option<C>
+pub trait Heuristic<S, C> { fn estimate(&mut self, state: &S) -> Option<C>; }
+// + impls for &mut H, Box<H>, Zero, and HeuristicFn<F> (closures via heuristic_fn)
 pub struct Zero; // estimates 0 everywhere
 ```
 
@@ -83,9 +84,12 @@ pub struct Zero; // estimates 0 everywhere
 - `outcomes` keeps the callback form of the 0.0.0 placeholder: the successors of one action
   and their probabilities. An implementation needs no allocation and no iterator type.
 - `Goal` and `Heuristic` are separate values, not methods on the MDP, exactly as in
-  `heuristic-search`. One MDP can be solved for many goals and heuristics, and closures
-  work. `Heuristic<S, C>` has the same shape as there; this crate uses `C = f64`, which
-  closures infer without annotations.
+  `heuristic-search`. One MDP can be solved for many goals and heuristics. `Heuristic<S, C>`
+  has the same shape as there: `estimate` takes `&mut self` so a heuristic can keep a
+  workspace, algorithms take the heuristic by value, and callers pass `&mut h` to keep it.
+  A blanket impl for closures would overlap with the one for `&mut H` (`&mut F` is itself
+  a closure), so closures go through `heuristic_fn`. `Goal` keeps `&self` and a blanket
+  closure impl. This crate uses `C = f64`, which closures infer without annotations.
 - `Heuristic::estimate` returning `None` means a proven dead end, as in `heuristic-search`.
   `Some(f64::INFINITY)` means the same.
 
@@ -98,13 +102,12 @@ picks one of two semantics through `DeadEnds`:
 
 - `DeadEnds::Infinite` (default, the "fragile" SSP semantics). Dead ends cost infinity, so
   any action that reaches one with positive probability has infinite Q-value. The answer
-  is exact when a proper policy from `s0` exists. If none exists, value iteration returns
-  an infinite `V(s0)` and no action at `s0`; LRTDP does too when the dead ends it meets
-  are of the first two kinds. The third kind of dead end is only detected by value
-  iteration (through an almost-sure reachability pre-pass); LRTDP sees it as values that
-  keep rising. If such a trap is avoidable, the trial length limit lets LRTDP climb out of
-  it and converge; if no proper policy exists from `s0` and a trap cycle is reachable,
-  LRTDP never converges and only the budget stops it (tested).
+  is exact when a proper policy from `s0` exists. If none exists, the run ends with
+  `Status::Unsolvable`, an infinite `V(s0)` and no action at `s0`. The third kind of dead
+  end is found by graph analysis (see [Dead-end proofs](#dead-end-proofs)): by value
+  iteration on the full space before sweeping, and by LRTDP on the stored space whenever
+  trials get cut off. Without that analysis, LRTDP's values in a trap cycle would rise
+  forever.
 - `DeadEnds::Penalty(d)` (the fSSPUDE semantics of Kolobov, Mausam and Weld 2012). Every
   non-goal state gets an implicit "give up" action that costs `d` and ends planning. Values
   are capped at `d`, every policy is proper, and all algorithms converge on any
@@ -181,8 +184,14 @@ The guarantee, stated precisely:
 - epsilon-consistency is not `|V(s0) - V*(s0)| <= epsilon`. With an admissible heuristic,
   `V(s0) <= V*(s0)`, and if every action costs at least `c_min > epsilon`, then
   `V*(s0) - V(s0) <= epsilon * V(s0) / (c_min - epsilon)`. This follows from
-  `V_pi(s) - V(s) <= epsilon * E_pi[steps from s]` and `E_pi[steps] <= V_pi / c_min`. The
-  tests assert exactly this bound.
+  `V_pi(s) - V(s) <= epsilon * E_pi[steps from s]` and `E_pi[steps] <= V_pi / c_min`; the
+  same condition makes `pi` reach a goal with probability 1 (a goal-free closed cycle
+  cannot be epsilon-consistent when costs exceed epsilon). For a tolerance `t` on
+  `|V(s0) - V*(s0)|`, pick `epsilon <= t * c_min / (V + t)` for an upper estimate `V` of
+  `V*(s0)`. The tests assert both the bound and a tolerance picked this way.
+
+The `lrtdp` API documentation states the same guarantee under "Guarantee". All of it
+applies only to `Status::Converged`.
 
 ### Policy extraction
 
@@ -223,10 +232,41 @@ Additions to the paper's pseudocode:
   `checkSolved` as usual. Aborting is sound because only `checkSolved` labels, and the
   values backed up along the way steer later trials elsewhere. This keeps a trap cycle
   under `DeadEnds::Infinite` from hanging a trial;
-- a `Budget` checked before every backup stops the run; the result then reports
+- after a cut-off trial under `DeadEnds::Infinite`, the dead-end proof below runs on the
+  stored graph, at most once per `|S| + |outcomes|` backups so its cost stays
+  proportional to the search effort;
+- a `Budget` checked before every backup and trial stops the run; the result then reports
   `Status::BudgetExhausted` and carries the values so far;
 - states with no finite-valued action stop a trial (they are dead ends and get labeled by
   `checkSolved`).
+
+### Dead-end proofs
+
+The standard almost-sure reachability analysis (a greatest fixed point): start with all
+states as candidates, keep the candidates that reach a target with positive probability
+through *safe* actions (every outcome a candidate), repeat until nothing changes. Each
+round is a backward search over predecessor lists, linear in the stored outcomes. States
+left out have no proper policy and become dead ends valued at infinity.
+
+On a partially expanded space (LRTDP), unexpanded states count as targets. That makes the
+analysis optimistic and therefore sound: a state is only marked if it cannot reach a goal
+whatever the unexpanded part looks like. On a fully expanded space (value iteration) it is
+exact. Marking cannot invalidate a solved label: a solved, epsilon-consistent envelope
+with costs above epsilon contains no goal-free closed cycle.
+
+### Termination
+
+The default `Config` always returns: its budget, `Limits::DEFAULT`, allows `10^8` backups
+and `10^7` stored states. An exhausted budget gives `Status::BudgetExhausted`, never a
+verdict. `Limits::unlimited()` removes the limits. Without limits, a run returns on every
+finite SSP with positive costs whose traps the dead-end proof finds; it may not return on
+an infinite state space or with zero-cost cycles.
+
+A distinct "diverged" status was considered: a value exceeding a provable upper bound
+would show divergence. Under a penalty the bound is the penalty itself and values are
+capped, so nothing diverges; under infinite cost no finite bound is known in general. The
+dead-end proof replaces it with a stronger answer: `Status::Unsolvable` when the initial
+state has no proper policy.
 
 ### Seeded deterministic sampling
 
@@ -270,7 +310,8 @@ large it may move into its own crate. Nothing in milestone 1 depends on it.
 
 ## Error handling
 
-Algorithms return `Result<Solution, Error<S>>`. Errors carry the state where the input went
+Algorithms return `Result<Solution, Error<S>>` (`SolveResult<M>`). A solution's `Status` is
+`Converged`, `BudgetExhausted` or `Unsolvable`. Errors carry the state where the input went
 wrong:
 
 - `Error::InvalidCost`: a cost is negative, NaN or infinite;
@@ -301,7 +342,11 @@ overestimates are allowed (they only void the optimality bound). Neither panics.
     policy residual with any);
   - two runs with the same seed give identical values, policies and statistics.
 - Robustness: overestimating, negative, `Some(inf)`, false `None` and NaN heuristics under
-  a budget; no panic, no hang, NaN reported as an error.
+  a budget; no panic, no hang, NaN reported as an error; the frozen-policy residual holds
+  for any heuristic.
+- Termination: unavoidable trap cycles end as `Unsolvable` with the default configuration
+  (both algorithms); infinite state spaces stop at the state limit, for value iteration's
+  enumeration too.
 - Proptest case counts are fixed in code (64), so `cargo test` stays fast.
 
 ## Milestones
