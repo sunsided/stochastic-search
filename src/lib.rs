@@ -15,9 +15,9 @@
 //!
 //! ## Algorithms
 //!
-//! - [`lrtdp`]: labeled real-time dynamic programming (Bonet and Geffner 2003). Explores only
+//! - [`lrtdp()`]: labeled real-time dynamic programming (Bonet and Geffner 2003). Explores only
 //!   the states a good policy visits; epsilon-consistent on them when it converges.
-//! - [`value_iteration`]: value iteration over every reachable state. The exact reference.
+//! - [`value_iteration()`]: value iteration over every reachable state. The exact reference.
 //!
 //! ## Dead ends
 //!
