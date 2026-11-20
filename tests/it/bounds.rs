@@ -91,6 +91,35 @@ fn assert_brackets(
     Ok(())
 }
 
+/// Asserts `U(s) >= Q_U(s, pi(s))` at every stored state with a policy action, which holds
+/// for a monotone upper bound such as the penalty.
+fn assert_upper_policy_bounded(
+    table: &Table,
+    solution: &Solution<usize, usize>,
+) -> Result<(), TestCaseError> {
+    for (state, actions) in table.actions.iter().enumerate() {
+        let Some(&action) = solution.action(&state) else {
+            continue;
+        };
+
+        let entry = &actions[action];
+        let upper = |s: usize| solution.upper_bound(&s).expect("successors are stored");
+        let q: f64 = entry.cost
+            + entry
+                .outcomes
+                .iter()
+                .map(|&(t, p)| p * upper(t))
+                .sum::<f64>();
+        prop_assert!(
+            upper(state) >= q - ROUNDING,
+            "U {} below Q_U {q} at {state}",
+            upper(state)
+        );
+    }
+
+    Ok(())
+}
+
 /// Asserts that the run converged with a gap of at most epsilon at the initial state.
 fn assert_converged(solution: &Solution<usize, usize>) -> Result<(), TestCaseError> {
     let upper = solution
@@ -136,6 +165,7 @@ proptest! {
         assert_converged(&solution)?;
         assert_brackets(&solution, &optimal(&table, dead_ends))?;
         prop_assert!(solution.initial_upper_bound() <= Some(f64::from(penalty)));
+        assert_upper_policy_bounded(&table, &solution)?;
     }
 
     /// The bounds bracket `V*` at any time, also when a small budget stops the run.

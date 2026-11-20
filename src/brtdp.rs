@@ -77,9 +77,11 @@ use crate::space::{Id, Kind, Problem, Space};
 /// If, in addition, the upper bound is monotone (`U(s) >= min_a Q_U(s, a)` everywhere, as
 /// for the constant penalty), backups keep it monotone, and every stored state with a policy
 /// action `pi(s)` satisfies `U(s) >= Q_U(s, pi(s))`. Then following the policy from a state
-/// whose policy successors all have actions costs at most `U` in expectation. A run that
-/// stops early may still leave states without an action in the policy's envelope (states no
-/// trial backed up); [`Solution::action`] is `None` there.
+/// whose policy successors all have actions costs at most `U` in expectation. The policy's
+/// envelope may contain states without an action, also after convergence: states no trial
+/// backed up because a run stopped early, or because their probability-weighted gap was
+/// always below the trial threshold (rare outcomes, or bounds that nearly met from the
+/// start). [`Solution::action`] is `None` there.
 ///
 /// # Termination
 ///

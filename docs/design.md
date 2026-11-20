@@ -207,7 +207,9 @@ The result type `Solution` answers `value(&s)` and `action(&s)`. For LRTDP, `act
 frozen greedy action of solved states; for unsolved states (only when a budget stopped the
 run) it is the last greedy action recorded. Value iteration records the greedy action of
 its final sweep. `action` returns `None` at goals, dead ends, give-up states and states the
-algorithm never touched.
+algorithm never touched. BRTDP records the action greedy on its upper bound at each
+state's last backup; `upper_bound(&s)` returns that bound (and `None` for the other
+algorithms). Its envelope may contain states no trial backed up, without an action.
 
 ## Algorithms
 
@@ -467,9 +469,12 @@ wrong:
 - `Error::InvalidProbability`: a probability is NaN or outside `(0, 1]`;
 - `Error::ProbabilitySum`: an action's outcomes do not sum to 1 within the tolerance
   (including an action with no outcomes);
-- `Error::InvalidHeuristic`: the heuristic returned NaN or negative infinity;
+- `Error::InvalidHeuristic`: the heuristic returned NaN or negative infinity, or a BRTDP
+  upper estimate is NaN, negative infinity or below the lower estimate;
+- `Error::UnboundedUpper`: under infinite dead ends, BRTDP's upper estimate is infinite at
+  a state the lower estimate does not prove a dead end;
 - `Error::InvalidConfig`: epsilon not finite and positive, a penalty not finite and
-  non-negative, or a zero trial length.
+  non-negative, a zero trial length, or a BRTDP `tau` not finite and above 1.
 
 Negative heuristic values are allowed (they are admissible, only uninformative), and
 overestimates are allowed (they only void the optimality bound). Neither panics.
