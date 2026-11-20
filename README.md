@@ -13,6 +13,10 @@ Planning under probabilistic outcomes: iLAO*, RTDP, LRTDP, BRTDP, POMCP and DESP
 - Planned: one-tip LAO*, CG-iLAO*, FRTDP; belief tracking and tree reuse between
   POMDP decisions
 
+- Shared traits: `Goal`, `Heuristic`, `heuristic_fn` and `Budget` come from
+  `search-core` and are re-exported here. Breaking: `Budget` bounds are
+  now `Budget<Stats>`; `Zero` stays local because it is the `f64` heuristic.
+
 See [docs/design.md](docs/design.md) for the model, guarantees and milestones.
 
 ## Status

@@ -17,7 +17,7 @@ use core::mem;
 
 use alloc::vec::Vec;
 
-use crate::budget::Budget;
+use crate::budget::{Budget, Stats};
 use crate::config::Config;
 
 use crate::error::Error;
@@ -151,7 +151,7 @@ where
     M::State: Clone + Eq + Hash,
     G: Goal<M::State>,
     H: Heuristic<M::State, f64>,
-    B: Budget,
+    B: Budget<Stats>,
     O: Observer,
 {
     let mut run = Run::new(mdp, initial, goal, heuristic, config)?;
@@ -205,7 +205,7 @@ where
     M::State: Clone + Eq + Hash,
     G: Goal<M::State>,
     H: Heuristic<M::State, f64>,
-    B: Budget,
+    B: Budget<Stats>,
     O: Observer,
 {
     /// Validates `config` and sets up a run from `initial` with an empty space.

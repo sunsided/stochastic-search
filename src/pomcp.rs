@@ -79,7 +79,7 @@ impl Default for PomcpConfig {
 impl<B> PomcpConfig<B> {
     /// Returns the same configuration with another budget.
     #[must_use]
-    pub fn with_budget<B2: Budget>(self, budget: B2) -> PomcpConfig<B2> {
+    pub fn with_budget<B2: Budget<Stats>>(self, budget: B2) -> PomcpConfig<B2> {
         PomcpConfig {
             discount: self.discount,
             exploration: self.exploration,
@@ -180,7 +180,7 @@ where
     P::Action: Clone,
     P::Observation: PartialEq,
     R: RolloutPolicy<P::State>,
-    B: Budget,
+    B: Budget<Stats>,
 {
     config.validate()?;
     if belief.is_empty() {
@@ -244,7 +244,7 @@ where
     P::Action: Clone,
     P::Observation: PartialEq,
     R: RolloutPolicy<P::State>,
-    B: Budget,
+    B: Budget<Stats>,
 {
     /// Syncs the counters and asks the budget whether to stop.
     fn exhausted(&mut self) -> bool {

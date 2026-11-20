@@ -48,7 +48,7 @@ pub(crate) struct Meter<B, O> {
     pub(crate) stats: Stats,
 }
 
-impl<B: Budget, O: Observer> Meter<B, O> {
+impl<B: Budget<Stats>, O: Observer> Meter<B, O> {
     /// Starts counting from zero with the budget, observer and progress interval of
     /// `config`.
     pub(crate) fn new(config: Config<B, O>) -> Self {

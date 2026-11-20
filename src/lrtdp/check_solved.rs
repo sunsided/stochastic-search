@@ -6,7 +6,7 @@ use core::mem;
 
 use alloc::vec::Vec;
 
-use crate::budget::Budget;
+use crate::budget::{Budget, Stats};
 use crate::lrtdp::Run;
 use crate::meter::Halt;
 use crate::model::{Goal, Heuristic, Mdp};
@@ -20,7 +20,7 @@ where
     M::State: Clone + Eq + Hash,
     G: Goal<M::State>,
     H: Heuristic<M::State, f64>,
-    B: Budget,
+    B: Budget<Stats>,
     O: Observer,
 {
     /// Labels `start` and its greedy envelope solved if every unsolved state in it has a

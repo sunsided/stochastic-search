@@ -3,7 +3,7 @@
 
 use core::hash::Hash;
 
-use crate::budget::Budget;
+use crate::budget::{Budget, Stats};
 use crate::config::Config;
 
 use crate::meter::{Halt, Meter, finish};
@@ -74,7 +74,7 @@ where
     M: Mdp,
     M::State: Clone + Eq + Hash,
     G: Goal<M::State>,
-    B: Budget,
+    B: Budget<Stats>,
     O: Observer,
 {
     config.validate()?;
@@ -111,7 +111,7 @@ where
     M: Mdp,
     M::State: Clone + Eq + Hash,
     G: Goal<M::State>,
-    B: Budget,
+    B: Budget<Stats>,
     O: Observer,
 {
     explore(space, problem, meter)?;
@@ -138,7 +138,7 @@ where
     M: Mdp,
     M::State: Clone + Eq + Hash,
     G: Goal<M::State>,
-    B: Budget,
+    B: Budget<Stats>,
     O: Observer,
 {
     let mut next = 0;
@@ -157,7 +157,7 @@ where
 /// # Errors
 ///
 /// Returns [`Halt::Budget`] when the budget runs out.
-fn sweep_until_converged<S, A, B: Budget, O: Observer>(
+fn sweep_until_converged<S, A, B: Budget<Stats>, O: Observer>(
     space: &mut Space<S, A>,
     meter: &mut Meter<B, O>,
     start: Id,

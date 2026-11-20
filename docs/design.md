@@ -23,7 +23,8 @@ Constraints:
 
 - `no_std` + `alloc`. Time limits come from the caller through a budget.
 - No dependency on `sas-plus`: its transitions are deterministic and cannot express a
-  distribution over successors. No dependency on other ecosystem crates yet.
+  distribution over successors. The only ecosystem dependency is `search-core`, for the
+  shared `Goal`, `Heuristic` and `Budget` traits (see [Cross-crate needs](#cross-crate-needs)).
 - External dependencies: `hashbrown` (state interning), `libm` (`sqrt`, `log` under
   `no_std`), `rand_core` without default features (the generator trait of the POMDP
   model).
@@ -75,10 +76,14 @@ pub trait Mdp {
                 emit: impl FnMut(Self::State, f64));
 }
 
+// From search-core, re-exported at the crate root:
 pub trait Goal<S> { fn is_goal(&self, state: &S) -> bool; }               // + impl for Fn(&S) -> bool
-pub trait Heuristic<S, C> { fn estimate(&mut self, state: &S) -> Option<C>; }
-// + impls for &mut H, Box<H>, Zero, and HeuristicFn<F> (closures via heuristic_fn)
-pub struct Zero; // estimates 0 everywhere
+pub trait Heuristic<S, C = u32> { fn estimate(&mut self, state: &S) -> Option<C>; }
+// + impls for &mut H, Box<H>, and HeuristicFn<F> (closures via heuristic_fn)
+pub trait Budget<T> { fn exhausted(&mut self, stats: &T) -> bool; }        // + impl for FnMut(&T) -> bool
+
+// Local:
+pub struct Zero; // Heuristic<S, f64>, estimates 0 everywhere
 ```
 
 - `actions` emits every applicable action with its cost `c(s, a)`. Cost per state and
@@ -86,7 +91,7 @@ pub struct Zero; // estimates 0 everywhere
 - `outcomes` keeps the callback form of the 0.0.0 placeholder: the successors of one action
   and their probabilities. An implementation needs no allocation and no iterator type.
 - `Goal` and `Heuristic` are separate values, not methods on the MDP, exactly as in
-  `heuristic-search`. One MDP can be solved for many goals and heuristics. `Heuristic<S, C>`
+  `heuristic-search` (both are `search-core`'s). One MDP can be solved for many goals and heuristics. `Heuristic<S, C>`
   has the same shape as there: `estimate` takes `&mut self` so a heuristic can keep a
   workspace, algorithms take the heuristic by value, and callers pass `&mut h` to keep it.
   A blanket impl for closures would overlap with the one for `&mut H` (`&mut F` is itself
@@ -517,12 +522,18 @@ overestimates are allowed (they only void the optimality bound). Neither panics.
 
 ## Cross-crate needs
 
-- `heuristic-search` defines `Heuristic<S, C>` and `Goal<S>` with the same shape as here.
-  Once both crates are stable, the traits should move to one place (`search-core` per the
-  architecture's rule, since two crates then need the same public trait) so a heuristic
-  written for one works with the other.
-- `heuristic-search::Budget` and `Stats` have the same role as this crate's `Budget`; a
-  shared budget trait would let callers reuse their clock-based budget.
+- `Goal`, `Heuristic`, `heuristic_fn`, `HeuristicFn` and `Budget` come from `search-core`
+  (adopted per its `MIGRATION.md`) and are re-exported at the crate root, so
+  `stochastic_search::Heuristic` and friends keep working and a heuristic or budget
+  written for `heuristic-search` works here. `Zero` (for `f64`), `Limits`, `Stats` and
+  `Mdp` stay local. Breaking changes of the adoption:
+  - `Budget` is now `Budget<Stats>`: code naming the trait in bounds writes
+    `B: Budget<Stats>` and `impl Budget<Stats> for MyBudget`. Closures and `Limits` are
+    unaffected.
+  - `Heuristic` gains a default type parameter (`C = u32`); this crate's algorithms still
+    require `Heuristic<S, f64>`, which closures infer, so call sites are unchanged.
+  - Importing `search_core::Zero` next to `stochastic_search::Zero` clashes; the local one
+    is the `f64` heuristic.
 - `heuristic-search` is generic over `Cost`; this crate fixes `f64`. A shared heuristic
   trait must therefore stay generic in `C`, and integer-cost heuristics need a conversion
   adapter (`u32 -> f64` is lossless).

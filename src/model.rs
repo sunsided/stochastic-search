@@ -5,8 +5,31 @@
 //! costs and outcome distributions; the goal test and the heuristic are separate values, so
 //! one MDP can be solved for many goals with many heuristics. [`Goal`] is implemented for
 //! plain closures, [`Heuristic`] for closures wrapped in [`heuristic_fn`].
+//!
+//! [`Goal`], [`Heuristic`], [`heuristic_fn`] and [`HeuristicFn`] are `search-core`'s, so a
+//! heuristic written for one planning crate works with the others. [`Mdp`] and [`Zero`] stay
+//! here: the MDP shape is specific to this crate, and `search-core`'s zero heuristic covers
+//! only its integer-like `Cost` types, not `f64`.
+//!
+//! # The heuristic contract
+//!
+//! The algorithms of this crate use `Heuristic<S, f64>`, which closures infer on their own.
+//! `estimate` takes `&mut self`, so a heuristic can keep a reusable workspace; algorithms
+//! take the heuristic by value and own it for the run; pass `&mut h` to keep `h` and its
+//! workspace afterwards.
+//!
+//! - It is called once per state, when the state is first stored. Goal states are
+//!   absorbing and cost-free and are never estimated.
+//! - `None` (or an infinite estimate) means no proper policy exists from the state (a proven
+//!   dead end). Algorithms never expand such states, so a heuristic must only return `None`
+//!   when that is certain.
+//! - NaN and negative infinity are rejected with
+//!   [`Error::InvalidHeuristic`](crate::Error::InvalidHeuristic).
+//! - LRTDP, RTDP and iLAO* return optimal values only if the heuristic is admissible (never
+//!   overestimates the optimal expected cost). Inadmissible heuristics never cause a panic;
+//!   they only void the optimality bound.
 
-use alloc::boxed::Box;
+pub use search_core::{Goal, Heuristic, HeuristicFn, heuristic_fn};
 
 /// A finite Markov decision process with action costs.
 ///
@@ -69,92 +92,10 @@ pub trait Mdp {
     );
 }
 
-/// A goal test over states of type `S`.
-///
-/// Implemented for every `Fn(&S) -> bool`. Goal states are absorbing and cost-free.
-pub trait Goal<S> {
-    /// Returns `true` if `state` is a goal state.
-    fn is_goal(&self, state: &S) -> bool;
-}
-
-impl<S, F: Fn(&S) -> bool> Goal<S> for F {
-    fn is_goal(&self, state: &S) -> bool {
-        self(state)
-    }
-}
-
-/// An estimate of the expected cost from a state to a goal.
-///
-/// `estimate` takes `&mut self`, so a heuristic can keep a reusable workspace (scratch
-/// buffers, caches) without interior mutability. Algorithms take the heuristic by value and
-/// own it for the run; pass `&mut h` to keep `h` and its workspace afterwards. Implemented
-/// for `&mut H` and `Box<H>` of any heuristic `H`, for [`Zero`], and for closures through
-/// [`heuristic_fn`]. The algorithms of this crate use `C = f64`, which closures infer on
-/// their own. The shape matches `heuristic-search`'s trait of the same name.
-///
-/// LRTDP returns optimal values only if the heuristic is admissible (never overestimates the
-/// optimal expected cost). Inadmissible heuristics never cause a panic; they only void the
-/// optimality bound.
-pub trait Heuristic<S, C> {
-    /// Estimates the expected remaining cost from `state` to a goal.
-    ///
-    /// `None` (or an infinite estimate) means no proper policy exists from `state` (a proven
-    /// dead end). Algorithms never expand such states, so a heuristic must only return `None`
-    /// when that is certain. NaN and negative infinity are rejected with
-    /// [`Error::InvalidHeuristic`](crate::Error::InvalidHeuristic).
-    ///
-    /// Called once per state, when the state is first stored.
-    fn estimate(&mut self, state: &S) -> Option<C>;
-}
-
-impl<S, C, H: Heuristic<S, C> + ?Sized> Heuristic<S, C> for &mut H {
-    fn estimate(&mut self, state: &S) -> Option<C> {
-        (**self).estimate(state)
-    }
-}
-
-impl<S, C, H: Heuristic<S, C> + ?Sized> Heuristic<S, C> for Box<H> {
-    fn estimate(&mut self, state: &S) -> Option<C> {
-        (**self).estimate(state)
-    }
-}
-
-/// Turns a closure `FnMut(&S) -> Option<C>` into a [`Heuristic`].
-///
-/// A blanket impl for closures is not possible next to the one for `&mut H`: `&mut F` is
-/// itself a closure, so the two impls would overlap.
-///
-/// # Example
-///
-/// ```
-/// use stochastic_search::{Heuristic, heuristic_fn};
-///
-/// let mut calls = 0;
-/// let mut h = heuristic_fn(|state: &u32| {
-///     calls += 1;
-///     (*state < 10).then(|| f64::from(10 - state))
-/// });
-///
-/// assert_eq!(h.estimate(&3), Some(7.0));
-/// assert_eq!(h.estimate(&12), None);
-/// drop(h);
-/// assert_eq!(calls, 2);
-/// ```
-pub fn heuristic_fn<S, C, F: FnMut(&S) -> Option<C>>(f: F) -> HeuristicFn<F> {
-    HeuristicFn(f)
-}
-
-/// A closure used as a [`Heuristic`]; created by [`heuristic_fn`].
-#[derive(Debug, Clone, Copy)]
-pub struct HeuristicFn<F>(F);
-
-impl<S, C, F: FnMut(&S) -> Option<C>> Heuristic<S, C> for HeuristicFn<F> {
-    fn estimate(&mut self, state: &S) -> Option<C> {
-        (self.0)(state)
-    }
-}
-
 /// The blind heuristic: estimates `0` everywhere. Admissible for every SSP.
+///
+/// Local to this crate because `search_core::Zero` covers only `search_core::Cost` types,
+/// which `f64` is not. Importing both under the name `Zero` clashes; rename one with `as`.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct Zero;
 

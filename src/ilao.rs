@@ -16,7 +16,7 @@ use core::hash::Hash;
 
 use alloc::vec::Vec;
 
-use crate::budget::Budget;
+use crate::budget::{Budget, Stats};
 use crate::config::Config;
 use crate::lrtdp::Run;
 use crate::meter::{Halt, finish};
@@ -112,7 +112,7 @@ where
     M::State: Clone + Eq + Hash,
     G: Goal<M::State>,
     H: Heuristic<M::State, f64>,
-    B: Budget,
+    B: Budget<Stats>,
     O: Observer,
 {
     let mut run = Run::new(mdp, initial, goal, heuristic, config)?;
@@ -141,7 +141,7 @@ where
     M::State: Clone + Eq + Hash,
     G: Goal<M::State>,
     H: Heuristic<M::State, f64>,
-    B: Budget,
+    B: Budget<Stats>,
     O: Observer,
 {
     /// Runs passes until the initial state is solved.

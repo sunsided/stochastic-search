@@ -1,6 +1,6 @@
 //! Run configuration ([`Config`]) and dead-end semantics ([`DeadEnds`]).
 
-use crate::budget::{Budget, Limits};
+use crate::budget::{Budget, Limits, Stats};
 use crate::error::Error;
 use crate::observer::Observer;
 
@@ -112,7 +112,7 @@ impl Default for Config {
 impl<B, O> Config<B, O> {
     /// Returns the same configuration with another budget.
     #[must_use]
-    pub fn with_budget<B2: Budget>(self, budget: B2) -> Config<B2, O> {
+    pub fn with_budget<B2: Budget<Stats>>(self, budget: B2) -> Config<B2, O> {
         Config {
             epsilon: self.epsilon,
             dead_ends: self.dead_ends,

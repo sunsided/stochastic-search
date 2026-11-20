@@ -96,7 +96,7 @@ impl Default for DespotConfig {
 impl<B> DespotConfig<B> {
     /// Returns the same configuration with another budget.
     #[must_use]
-    pub fn with_budget<B2: Budget>(self, budget: B2) -> DespotConfig<B2> {
+    pub fn with_budget<B2: Budget<Stats>>(self, budget: B2) -> DespotConfig<B2> {
         DespotConfig {
             discount: self.discount,
             scenarios: self.scenarios,
@@ -222,7 +222,7 @@ where
     P::Observation: PartialEq,
     R: RolloutPolicy<P::State>,
     U: FnMut(&P::State) -> f64,
-    B: Budget,
+    B: Budget<Stats>,
 {
     let mut search = Search::new(pomdp, belief, default, upper, config)?;
     let status = search.run()?;
@@ -272,7 +272,7 @@ where
     P::Observation: PartialEq,
     R: RolloutPolicy<P::State>,
     U: FnMut(&P::State) -> f64,
-    B: Budget,
+    B: Budget<Stats>,
 {
     /// Validates the input, samples the scenarios and initializes the root.
     ///

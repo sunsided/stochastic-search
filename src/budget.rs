@@ -1,4 +1,14 @@
 //! Run counters ([`Stats`]) and early stopping ([`Budget`], [`Limits`]).
+//!
+//! [`Budget`] is `search-core`'s trait, used here as `Budget<Stats>`: it decides when a run
+//! must stop before it converges. It is asked before every Bellman backup, every LRTDP, RTDP
+//! or BRTDP trial, every iLAO* pass and every state expansion of value iteration's
+//! enumeration, with the counters so far, so a run stopped by [`Limits::max_backups`] `= n`
+//! has performed exactly `n` backups. Implemented for [`Limits`] and, by `search-core`, for
+//! every `FnMut(&Stats) -> bool`, which lets callers with a clock (this crate is `no_std`)
+//! add a time limit.
+
+pub use search_core::Budget;
 
 /// Counters collected during one run of an algorithm.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -16,25 +26,6 @@ pub struct Stats {
     pub expanded: u64,
     /// Distinct states stored, expanded or not, including goals and dead ends.
     pub states: u64,
-}
-
-/// Decides when a run must stop before it converges.
-///
-/// Asked before every Bellman backup, every LRTDP, RTDP or BRTDP trial, every iLAO* pass and every
-/// state expansion of value
-/// iteration's enumeration, with the counters so far, so a run
-/// stopped by [`Limits::max_backups`] `= n` has performed exactly `n` backups. Implemented for
-/// [`Limits`] and for every `FnMut(&Stats) -> bool`, which lets callers with a clock (this
-/// crate is `no_std`) add a time limit.
-pub trait Budget {
-    /// Returns `true` if the run must stop now, given the counters so far.
-    fn exhausted(&mut self, stats: &Stats) -> bool;
-}
-
-impl<F: FnMut(&Stats) -> bool> Budget for F {
-    fn exhausted(&mut self, stats: &Stats) -> bool {
-        self(stats)
-    }
 }
 
 /// Simple counter limits.
@@ -119,7 +110,7 @@ impl Default for Limits {
     }
 }
 
-impl Budget for Limits {
+impl Budget<Stats> for Limits {
     fn exhausted(&mut self, stats: &Stats) -> bool {
         self.max_backups.is_some_and(|max| stats.backups >= max)
             || self.max_trials.is_some_and(|max| stats.trials >= max)

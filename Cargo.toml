@@ -12,6 +12,8 @@ keywords = ["mdp", "planning", "pomdp", "rtdp", "search"]
 categories = ["algorithms", "science", "no-std"]
 
 [dependencies]
+# The shared Goal, Heuristic and Budget traits of the planning crates.
+search-core = { path = "../search-core", version = "0.0.0" }
 # Hash table for state interning under no_std; see docs/design.md.
 hashbrown = { version = "0.16", default-features = false, features = ["default-hasher"] }
 # Square roots, logarithms and powers for UCB and discounting under no_std.

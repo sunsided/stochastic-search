@@ -2,7 +2,7 @@
 
 use core::hash::Hash;
 
-use crate::budget::Budget;
+use crate::budget::{Budget, Stats};
 use crate::lrtdp::Run;
 use crate::model::{Goal, Heuristic, Mdp};
 use crate::observer::{Event, Observer};
@@ -13,7 +13,7 @@ where
     M::State: Clone + Eq + Hash,
     G: Goal<M::State>,
     H: Heuristic<M::State, f64>,
-    B: Budget,
+    B: Budget<Stats>,
     O: Observer,
 {
     /// Under infinite dead-end cost, proves by graph analysis which stored states cannot
