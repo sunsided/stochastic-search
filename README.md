@@ -2,15 +2,17 @@
 
 Planning under probabilistic outcomes: LAO*, iLAO*, RTDP, LRTDP, POMCP and DESPOT.
 
-## Planned scope
+## Scope
 
-- AND/OR heuristic search: LAO*, iLAO*, CG-iLAO*
-- Real-time dynamic programming: RTDP, LRTDP
-- Belief space: POMCP, DESPOT
+- Implemented: labeled RTDP (LRTDP) and value iteration for stochastic shortest path
+  problems, with infinite or finite-penalty dead ends
+- Planned: RTDP; AND/OR heuristic search (LAO*, iLAO*, CG-iLAO*); belief space (POMCP, DESPOT)
+
+See [docs/design.md](docs/design.md) for the model, guarantees and milestones.
 
 ## Status
 
-Pre-release. Version 0.0.0 reserves the name; the API is not started yet and will change.
+Pre-release. Version 0.0.0 reserves the name; the API will change.
 
 ## License
 
