@@ -1,4 +1,5 @@
-//! Benchmarks for the hot paths: LRTDP and BRTDP trials on a corridor SSP, and POMCP simulations and
+//! Benchmarks for the hot paths: LRTDP trials on a corridor SSP, LRTDP against the bounded
+//! RTDP variants on a noisy corridor, and POMCP simulations and
 //! DESPOT explorations on Tiger.
 
 use std::hint::black_box;
@@ -6,8 +7,9 @@ use std::hint::black_box;
 use criterion::Criterion;
 use rand_core::Rng;
 use stochastic_search::{
-    Config, DespotConfig, Limits, Mdp, PomcpConfig, Pomdp, RolloutPolicy, Step, Zero, brtdp,
-    despot, heuristic_fn, lrtdp, pomcp, unit_interval,
+    BrtdpConfig, Config, DespotConfig, FrtdpConfig, Limits, Mdp, PomcpConfig, Pomdp, RolloutPolicy,
+    Step, VpiRtdpConfig, Zero, brtdp, despot, frtdp, heuristic_fn, lrtdp, pomcp, unit_interval,
+    vpi_rtdp,
 };
 
 /// Runs every benchmark in this file with criterion's command-line flags.
@@ -15,7 +17,7 @@ fn main() {
     let mut criterion = Criterion::default().configure_from_args();
 
     bench_lrtdp(&mut criterion);
-    bench_brtdp(&mut criterion);
+    bench_bounded(&mut criterion);
     bench_pomcp(&mut criterion);
     bench_despot(&mut criterion);
     criterion.final_summary();
@@ -56,25 +58,60 @@ fn bench_lrtdp(criterion: &mut Criterion) {
     });
 }
 
-/// BRTDP solving the corridor from scratch with the blind lower bound and a loose upper
-/// bound (twice the distance; the optimum is 1.25 times it).
-fn bench_brtdp(criterion: &mut Criterion) {
-    criterion.bench_function("brtdp corridor 1000", |bencher| {
-        bencher.iter(|| {
-            let upper = heuristic_fn(|state: &u32| Some(2.0 * f64::from(1000 - state)));
-            let solution = brtdp(
-                &Corridor,
-                0,
-                &|state: &u32| *state == 1000,
-                Zero,
-                upper,
-                Config::default(),
-            )
-            .expect("valid input");
+/// A noisy corridor of 200 cells: each step costs 1, moves on with probability 0.6, stays
+/// with 0.2 and slips back one cell with 0.2 (staying put at cell 0).
+struct NoisyCorridor;
 
-            black_box(solution.initial_value())
+impl Mdp for NoisyCorridor {
+    type State = u32;
+    type Action = ();
+
+    fn actions(&self, _state: &u32, mut emit: impl FnMut((), f64)) {
+        emit((), 1.0);
+    }
+
+    fn outcomes(&self, state: &u32, _action: &(), mut emit: impl FnMut(u32, f64)) {
+        emit(state + 1, 0.6);
+        emit(*state, 0.2);
+        emit(state.saturating_sub(1), 0.2);
+    }
+}
+
+/// LRTDP, BRTDP, FRTDP and VPI-RTDP on the noisy corridor with the blind lower bound; the
+/// bounded ones get the upper bound `2.5 * distance + 1` (the walk drifts forward by at
+/// least 0.4 cells per step).
+fn bench_bounded(criterion: &mut Criterion) {
+    let goal = |state: &u32| *state == 200;
+    let upper = || heuristic_fn(|state: &u32| Some(2.5 * f64::from(200 - state) + 1.0));
+    let mut group = criterion.benchmark_group("noisy corridor 200");
+    group.bench_function("lrtdp", |bencher| {
+        bencher.iter(|| {
+            let solution = lrtdp(&NoisyCorridor, 0, &goal, Zero, Config::default());
+            black_box(solution.expect("valid input").initial_value())
         });
     });
+    group.bench_function("brtdp", |bencher| {
+        bencher.iter(|| {
+            let config = BrtdpConfig::default();
+            let solution = brtdp(&NoisyCorridor, 0, &goal, Zero, upper(), config);
+            black_box(solution.expect("valid input").initial_value())
+        });
+    });
+    group.bench_function("frtdp", |bencher| {
+        bencher.iter(|| {
+            let config = FrtdpConfig::default();
+            let solution = frtdp(&NoisyCorridor, 0, &goal, Zero, upper(), config);
+            black_box(solution.expect("valid input").initial_value())
+        });
+    });
+    group.bench_function("vpi-rtdp", |bencher| {
+        bencher.iter(|| {
+            let config = VpiRtdpConfig::default();
+            let solution = vpi_rtdp(&NoisyCorridor, 0, &goal, Zero, upper(), config);
+            black_box(solution.expect("valid input").initial_value())
+        });
+    });
+    group.finish();
 }
 
 /// The Tiger problem: the state is `true` if the tiger is behind the left door; actions are

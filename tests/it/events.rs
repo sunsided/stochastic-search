@@ -89,22 +89,20 @@ impl Mdp for Ring {
 #[test]
 fn unsolvable_cycle_reports_suspected_divergence() {
     let mut first_suspicion = None;
-    let config = Config {
-        max_trial_length: 20,
-        ..Config::default()
-    }
-    .with_budget(Limits::backups(100_000))
-    .with_observer(observer_fn(|event| {
-        if let Event::SuspectedDivergence {
-            backups,
-            value,
-            growth,
-        } = event
-        {
-            assert!(value > 0.0 && growth > 0.0);
-            first_suspicion.get_or_insert(backups);
-        }
-    }));
+    let config = Config::default()
+        .with_max_trial_length(20)
+        .with_budget(Limits::backups(100_000))
+        .with_observer(observer_fn(|event| {
+            if let Event::SuspectedDivergence {
+                backups,
+                value,
+                growth,
+            } = event
+            {
+                assert!(value > 0.0 && growth > 0.0);
+                first_suspicion.get_or_insert(backups);
+            }
+        }));
     let solution = lrtdp(&Ring, 0, &|_: &u32| false, Zero, config).expect("valid input");
 
     assert!(matches!(
@@ -124,11 +122,9 @@ fn slow_solvable_problem_still_converges() {
         actions: vec![vec![action(1.0, &[(1, 0.001), (0, 0.999)])], vec![]],
         goal: 1,
     };
-    let config = Config {
-        max_trial_length: 1,
-        progress_interval: Some(1000),
-        ..Config::default()
-    };
+    let config = Config::default()
+        .with_max_trial_length(1)
+        .with_progress_interval(Some(1000));
 
     let (observed, events) = run_collecting(&table, config);
     let quiet =
@@ -153,13 +149,8 @@ fn slow_solvable_problem_still_converges() {
 #[test]
 fn progress_follows_the_interval() {
     let table = rare_trap(true);
-    let (solution, events) = run_collecting(
-        &table,
-        Config {
-            progress_interval: Some(1),
-            ..Config::default()
-        },
-    );
+    let (solution, events) =
+        run_collecting(&table, Config::default().with_progress_interval(Some(1)));
     let progress = events
         .iter()
         .filter(|e| matches!(e, Event::Progress { .. }))

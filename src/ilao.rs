@@ -93,7 +93,7 @@ use crate::space::{Id, Kind};
 ///
 /// // The remaining distance is an admissible estimate.
 /// let heuristic = heuristic_fn(|state: &u8| Some(f64::from(3 - state)));
-/// let config = Config { epsilon: 1e-9, ..Config::default() };
+/// let config = Config::default().with_epsilon(1e-9);
 /// let solution = ilao_star(&Corridor, 0, &|state: &u8| *state == 3, heuristic, config)?;
 ///
 /// assert!(solution.is_converged());

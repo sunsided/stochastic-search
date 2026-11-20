@@ -1,6 +1,7 @@
 //! # Stochastic search
 //!
-//! Planning under probabilistic outcomes: value iteration, RTDP, labeled RTDP, BRTDP, LAO* and iLAO* for
+//! Planning under probabilistic outcomes: value iteration, RTDP, labeled RTDP, BRTDP, FRTDP, VPI-RTDP, LAO* and
+//! iLAO* for
 //! fully observable problems; POMCP and DESPOT for partially observable ones.
 //!
 //! A problem is a stochastic shortest path (SSP) problem: reach a goal state with minimal
@@ -26,6 +27,10 @@
 //!   its stopping rule. The classic baseline.
 //! - [`brtdp()`]: bounded RTDP (McMahan, Likhachev and Gordon 2005). Keeps a lower and an
 //!   upper bound and samples where they are far apart; anytime, with a known gap.
+//! - [`frtdp()`]: focused RTDP (Smith and Simmons 2006). The same bounds; trials follow the
+//!   successor of highest priority with an adaptive depth limit.
+//! - [`vpi_rtdp()`]: VPI-RTDP (Sanner et al. 2009). The same bounds; trials follow the value
+//!   of perfect information about successors where the bounds are informative.
 //! - [`lao_star()`]: classic LAO* (Hansen and Zilberstein 2001), one tip per expansion
 //!   step with value iteration on its ancestors. The paper's original; slower than iLAO*.
 //! - [`ilao_star()`]: improved LAO* (Hansen and Zilberstein 2001). Grows the best partial
@@ -58,8 +63,9 @@
 //!
 //! States from which no policy reaches a goal with probability 1 are valued per
 //! [`DeadEnds`]: at infinity (the default, exact SSP semantics), or at a finite give-up
-//! penalty that makes every input solvable. [`brtdp()`] needs finite upper bounds, so under
-//! infinite dead ends its lower bound must prove the dead ends it meets.
+//! penalty that makes every input solvable. The bounded algorithms ([`brtdp()`], [`frtdp()`],
+//! [`vpi_rtdp()`]) need finite upper bounds, so under infinite dead ends their lower bound
+//! must prove the dead ends they meet.
 //!
 //! ## Events
 //!
@@ -122,7 +128,7 @@
 
 extern crate alloc;
 
-mod brtdp;
+mod bounds;
 mod budget;
 mod config;
 mod despot;
@@ -141,7 +147,9 @@ mod solution;
 mod space;
 mod value_iteration;
 
-pub use brtdp::brtdp;
+pub use bounds::brtdp::{BrtdpConfig, brtdp};
+pub use bounds::frtdp::{FrtdpConfig, frtdp};
+pub use bounds::vpi::{VpiRtdpConfig, vpi_rtdp};
 pub use budget::{Budget, Limits, Stats};
 pub use config::{Config, DeadEnds};
 pub use despot::{DespotConfig, despot};

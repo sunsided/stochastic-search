@@ -11,7 +11,10 @@ pub const PROBABILITY_TOLERANCE: f64 = 1e-9;
 
 /// Invalid input found while solving. Each variant names the state where it was found.
 ///
-/// Implements [`core::error::Error`] when the state is [`fmt::Debug`].
+/// Implements [`core::error::Error`] when the state is [`fmt::Debug`]. The enum is
+/// `#[non_exhaustive]`: new kinds of invalid input can be added without a breaking change,
+/// so a `match` outside this crate needs a wildcard arm.
+#[non_exhaustive]
 #[derive(Debug, Clone, PartialEq)]
 pub enum Error<S> {
     /// An action cost is negative, NaN or infinite.

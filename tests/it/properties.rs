@@ -49,13 +49,11 @@ fn solve_with(
     dead_ends: DeadEnds,
     seed: u64,
 ) -> Solution<usize, usize> {
-    let config = Config {
-        epsilon: EPSILON,
-        dead_ends,
-        seed,
-        max_trial_length: 200,
-        ..Config::default()
-    };
+    let config = Config::default()
+        .with_epsilon(EPSILON)
+        .with_dead_ends(dead_ends)
+        .with_seed(seed)
+        .with_max_trial_length(200);
     let heuristic = heuristic_fn(|state: &usize| Some(h[*state]));
 
     let goal = |s: &usize| table.is_goal(*s);
@@ -70,11 +68,9 @@ fn solve_with(
 
 /// Solves `table` from state 0 with value iteration to near machine precision.
 fn solve_vi(table: &Table, dead_ends: DeadEnds) -> Solution<usize, usize> {
-    let config = Config {
-        epsilon: ORACLE_EPSILON,
-        dead_ends,
-        ..Config::default()
-    };
+    let config = Config::default()
+        .with_epsilon(ORACLE_EPSILON)
+        .with_dead_ends(dead_ends);
 
     value_iteration(table, 0, &|s: &usize| table.is_goal(*s), config).expect("valid input")
 }
@@ -173,7 +169,7 @@ proptest! {
         let table = ssp(states, seed, Shape::Proper);
         let optimal = solve_vi(&table, DeadEnds::Infinite).initial_value();
         let epsilon = TOLERANCE * table.min_cost() / (2.0 * optimal.max(1.0));
-        let config = Config { epsilon, seed, ..Config::default() };
+        let config = Config::default().with_epsilon(epsilon).with_seed(seed);
         let solution = lrtdp(&table, 0, &|s: &usize| table.is_goal(*s), Zero, config).expect("valid input");
 
         prop_assert!(solution.is_converged());

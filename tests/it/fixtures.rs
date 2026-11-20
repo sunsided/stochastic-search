@@ -13,12 +13,10 @@ const TOLERANCE: f64 = 1e-6;
 /// Solves `table` from state 0 with value iteration, LRTDP, RTDP, iLAO* and LAO* under
 /// `dead_ends`.
 fn solve_both(table: &Table, dead_ends: DeadEnds) -> [Solution<usize, usize>; 5] {
-    let config = Config {
-        epsilon: 1e-10,
-        dead_ends,
-        max_trial_length: 100,
-        ..Config::default()
-    };
+    let config = Config::default()
+        .with_epsilon(1e-10)
+        .with_dead_ends(dead_ends)
+        .with_max_trial_length(100);
     let goal = |s: &usize| table.is_goal(*s);
 
     [
@@ -140,11 +138,9 @@ fn trap_proof_does_not_need_the_budget() {
         ],
         goal: 1,
     };
-    let config = Config {
-        max_trial_length: 3,
-        ..Config::default()
-    }
-    .with_budget(Limits::backups(1_000_000));
+    let config = Config::default()
+        .with_max_trial_length(3)
+        .with_budget(Limits::backups(1_000_000));
     let solution =
         lrtdp(&table, 0, &|s: &usize| table.is_goal(*s), Zero, config).expect("valid input");
 

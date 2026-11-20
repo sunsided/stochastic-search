@@ -36,20 +36,22 @@ impl DeadEnds {
 
 /// Settings shared by all algorithms.
 ///
-/// Build one with [`Config::default`] and struct update syntax, swap the budget with
-/// [`Config::with_budget`] and the observer with [`Config::with_observer`]:
+/// Build one with [`Config::default`] and the `with_*` methods, which swap one setting
+/// each; [`Config::with_budget`] and [`Config::with_observer`] also change the type. The
+/// struct is `#[non_exhaustive]`, so new settings can be added without a breaking change;
+/// outside this crate, the fields can be read and assigned but not listed in a struct
+/// expression.
 ///
 /// ```
 /// use stochastic_search::{Config, DeadEnds, Stats};
 ///
-/// let config = Config {
-///     epsilon: 1e-4,
-///     dead_ends: DeadEnds::Penalty(100.0),
-///     ..Config::default()
-/// }
-/// .with_budget(|stats: &Stats| stats.backups >= 1_000_000);
+/// let config = Config::default()
+///     .with_epsilon(1e-4)
+///     .with_dead_ends(DeadEnds::Penalty(100.0))
+///     .with_budget(|stats: &Stats| stats.backups >= 1_000_000);
 /// # let _ = config;
 /// ```
+#[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Config<B = Limits, O = ()> {
     /// Convergence threshold on Bellman residuals. Must be finite and greater than zero.
@@ -85,12 +87,6 @@ pub struct Config<B = Limits, O = ()> {
     /// growth of the initial value. At least `1`. Default `16`; ignored by the default
     /// observer.
     pub divergence_window: usize,
-    /// BRTDP's trial-end ratio `tau`: a [`brtdp`](crate::brtdp()) trial ends once the
-    /// expected bound gap of the next state falls below the initial state's gap divided by
-    /// `tau`. Finite and greater than `1`; larger values make trials longer.
-    ///
-    /// Default `10`, a choice of this crate. Ignored by the other algorithms.
-    pub tau: f64,
 }
 
 impl Default for Config {
@@ -104,12 +100,56 @@ impl Default for Config {
             observer: (),
             progress_interval: Some(1_000_000),
             divergence_window: 16,
-            tau: 10.0,
         }
     }
 }
 
 impl<B, O> Config<B, O> {
+    /// Returns the same configuration with another [`Config::epsilon`].
+    #[must_use]
+    pub fn with_epsilon(self, epsilon: f64) -> Self {
+        Self { epsilon, ..self }
+    }
+
+    /// Returns the same configuration with other [`Config::dead_ends`] semantics.
+    #[must_use]
+    pub fn with_dead_ends(self, dead_ends: DeadEnds) -> Self {
+        Self { dead_ends, ..self }
+    }
+
+    /// Returns the same configuration with another [`Config::seed`].
+    #[must_use]
+    pub fn with_seed(self, seed: u64) -> Self {
+        Self { seed, ..self }
+    }
+
+    /// Returns the same configuration with another [`Config::max_trial_length`].
+    #[must_use]
+    pub fn with_max_trial_length(self, max_trial_length: usize) -> Self {
+        Self {
+            max_trial_length,
+            ..self
+        }
+    }
+
+    /// Returns the same configuration with another [`Config::progress_interval`].
+    #[must_use]
+    pub fn with_progress_interval(self, progress_interval: Option<u64>) -> Self {
+        Self {
+            progress_interval,
+            ..self
+        }
+    }
+
+    /// Returns the same configuration with another [`Config::divergence_window`].
+    #[must_use]
+    pub fn with_divergence_window(self, divergence_window: usize) -> Self {
+        Self {
+            divergence_window,
+            ..self
+        }
+    }
+
     /// Returns the same configuration with another budget.
     #[must_use]
     pub fn with_budget<B2: Budget<Stats>>(self, budget: B2) -> Config<B2, O> {
@@ -122,7 +162,6 @@ impl<B, O> Config<B, O> {
             observer: self.observer,
             progress_interval: self.progress_interval,
             divergence_window: self.divergence_window,
-            tau: self.tau,
         }
     }
 
@@ -138,7 +177,6 @@ impl<B, O> Config<B, O> {
             observer,
             progress_interval: self.progress_interval,
             divergence_window: self.divergence_window,
-            tau: self.tau,
         }
     }
 
@@ -148,8 +186,7 @@ impl<B, O> Config<B, O> {
     ///
     /// Returns [`Error::InvalidConfig`] for an epsilon that is not finite and positive, a
     /// penalty that is not finite and non-negative, a zero trial length, a zero progress
-    /// interval, a zero divergence window, or a `tau` that is not finite and greater than
-    /// `1`.
+    /// interval or a zero divergence window.
     pub(crate) fn validate<S>(&self) -> Result<(), Error<S>> {
         if !(self.epsilon.is_finite() && self.epsilon > 0.0) {
             return Err(Error::InvalidConfig {
@@ -167,12 +204,6 @@ impl<B, O> Config<B, O> {
         if self.progress_interval == Some(0) || self.divergence_window == 0 {
             return Err(Error::InvalidConfig {
                 reason: "progress_interval and divergence_window must be at least 1",
-            });
-        }
-
-        if !(self.tau.is_finite() && self.tau > 1.0) {
-            return Err(Error::InvalidConfig {
-                reason: "tau must be finite and greater than 1",
             });
         }
 

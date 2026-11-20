@@ -57,7 +57,7 @@ use crate::space::{Id, Kind, Problem, Space};
 ///     }
 /// }
 ///
-/// let config = Config { epsilon: 1e-12, ..Config::default() };
+/// let config = Config::default().with_epsilon(1e-12);
 /// let solution = value_iteration(&Corridor, 0, &|state: &u8| *state == 3, config)?;
 ///
 /// // Three steps, each taking 1 / 0.75 attempts in expectation.

@@ -96,7 +96,7 @@ use crate::space::{Id, Kind};
 ///     }
 /// }
 ///
-/// let config = Config { epsilon: 1e-9, ..Config::default() };
+/// let config = Config::default().with_epsilon(1e-9);
 /// let solution = lao_star(&Corridor, 0, &|state: &u8| *state == 3, Zero, config)?;
 ///
 /// assert!(solution.is_converged());

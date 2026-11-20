@@ -11,7 +11,8 @@ function and a greedy policy.
 In scope, in milestone order (see [Milestones](#milestones)):
 
 - reference: value iteration (VI) on the reachable state space, used as a test oracle;
-- real-time dynamic programming: RTDP, labeled RTDP (LRTDP), bounded RTDP (BRTDP);
+- real-time dynamic programming: RTDP, labeled RTDP (LRTDP), and with two-sided bounds
+  bounded RTDP (BRTDP), focused RTDP (FRTDP) and VPI-RTDP;
 - AND/OR heuristic search: LAO*, improved LAO* (iLAO*), CG-iLAO*;
 - belief space: POMCP, DESPOT, over a separate generative POMDP model.
 
@@ -365,8 +366,40 @@ the heuristic) and an upper bound `U` (a `Vec<f64>` parallel to the node ids, so
 stays at 32 bytes) and backs up both in the same step. Trials act greedily on `L` and sample
 the successor `s'` with weight `P(s' | s, a) * (U(s') - L(s'))`; a trial ends when the total
 weight is below `(U(s0) - L(s0)) / tau`, then backs up its states in reverse. The run stops
-when `U(s0) - L(s0) <= epsilon`. `tau` is `Config::tau` (default 10, a crate choice, not
-taken from the paper).
+when `U(s0) - L(s0) <= epsilon`. `tau` is `BrtdpConfig::tau`, default 10: the paper used
+"tau between 10 and 100", and the low end favours short trials.
+
+The bounds run (`src/bounds.rs`) is shared by BRTDP, FRTDP and VPI-RTDP; an `Explorer`
+enum decides the next state of a trial and when it ends. Each algorithm takes its own
+config type (`BrtdpConfig`, `FrtdpConfig`, `VpiRtdpConfig`) wrapping the shared `Config` as
+`base`, so algorithm-specific parameters do not accumulate on `Config`. After a converged
+run, a fill pass backs up (breadth-first from `s0`) every unexpanded state of the
+upper-greedy envelope, so the returned policy covers its envelope; the budget is charged
+before each expansion, which makes "expanded" equal "backed up at least once".
+
+FRTDP (Smith and Simmons 2006), translated from rewards to costs (the paper's optimistic
+bound is our lower bound): priorities `prio(s) = min(gap(s) - epsilon / 2,
+max_s' P(s') * prio(s'))` under the lower-greedy action; a trial follows the successor of
+highest `P * prio`, ends when `gap(s) - epsilon / 2 <= 0` or at depth `D`; `D` starts at
+`D0 = 10` and grows by `kD = 1.1` after a trial whose late updates (depth above `D / kD`)
+had an average quality `delta * W` at least that of the early ones (paper's values). The
+paper outputs the pessimistic-greedy policy, which is our upper-greedy one. The deterministic
+choice can starve a low-probability successor that holds the gap up (found on a random
+SSP: the run stalled for 10^7 backups), so after an FRTDP or VPI-RTDP trial that did not
+shrink the gap of `s0`, the shared run makes the next trial a plain BRTDP trial.
+
+VPI-RTDP (Sanner, Goetschalckx, Driessens, Shani 2009), in costs: values are uniform between
+the bounds; `VPI(t)` is the largest, over `a != a*`, average of
+`max(0, E[Q(a*) | v_t] - E[Q(a) | v_t])` for `v_t` uniform in `[L(t), U(t)]`, which is
+linear in `v_t` and integrates in closed form. A trial samples by `P * gap` while some
+successor's gap exceeds `beta` times the initial gap of `s0` (the paper's "95% of the
+maximum possible bound", our reading), else by `VPI`, else with probability `alpha = 0.001`
+by gap, else ends. Two additions (documented on `vpi_rtdp`) make it terminate on the gap
+criterion, which the paper does not use (it stops on time): before the `alpha` rule,
+BRTDP's `tau` rule continues the trial by gap; and a trial that did not shrink the gap of
+`s0` is followed by one plain BRTDP trial (the shared fallback above). Without them, a random SSP was found where VPI
+steering cycled forever on a self-loop of positive VPI while the state holding the gap up
+had zero VPI.
 
 Dead ends are the obstacle: an infinite upper bound never becomes finite through backups
 on a cycle (`c + p * 0 + (1 - p) * inf = inf`), so gap-weighted sampling and the stopping
@@ -529,7 +562,8 @@ overestimates are allowed (they only void the optimality bound). Neither panics.
 
 1. Model traits, explicit state space, value iteration, LRTDP, tests. (this draft)
 2. Plain RTDP and iLAO*, sharing `space` and the LRTDP run. (done) Bounded RTDP with
-   finite upper bounds (done). One-tip LAO* (done). FRTDP.
+   finite upper bounds, FRTDP and VPI-RTDP on a shared bounds run (done). One-tip LAO*
+   (done).
 3. CG-iLAO*; policy evaluation utilities (exact evaluation of a fixed policy by linear
    solve or iteration); discounted MDP adapter.
 4. Belief-space trait set; POMCP; DESPOT. (done, one-shot) Next: belief tracking and tree
@@ -570,6 +604,10 @@ overestimates are allowed (they only void the optimality bound). Neither panics.
   loops.* Artificial Intelligence 129, 2001.
 - Schmalz, Trevizan. *Efficient constraint generation for stochastic shortest path
   problems.* AAAI 2024. (Venue and details to verify before milestone 3.)
+- Sanner, Goetschalckx, Driessens, Shani. *Bayesian real-time dynamic programming.* IJCAI
+  2009.
+- Smith, Simmons. *Focused real-time dynamic programming for MDPs: squeezing more out of a
+  heuristic.* AAAI 2006.
 - McMahan, Likhachev, Gordon. *Bounded real-time dynamic programming: RTDP with monotone
   upper bounds and performance guarantees.* ICML 2005.
 - Kolobov, Mausam, Weld. *A theory of goal-oriented MDPs with dead ends.* UAI 2012.

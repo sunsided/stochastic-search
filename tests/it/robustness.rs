@@ -13,12 +13,10 @@ use crate::table::{Table, action};
 
 /// A configuration whose budget bounds every run.
 fn bounded() -> Config {
-    Config {
-        epsilon: 1e-4,
-        max_trial_length: 200,
-        budget: Limits::backups(200_000),
-        ..Config::default()
-    }
+    Config::default()
+        .with_epsilon(1e-4)
+        .with_max_trial_length(200)
+        .with_budget(Limits::backups(200_000))
 }
 
 proptest! {
@@ -44,7 +42,7 @@ proptest! {
             .into_iter()
             .flat_map(|dead_ends| [0, 1, 2, 3].map(|algorithm| (dead_ends, algorithm)))
         {
-            let config = Config { dead_ends, ..bounded() };
+            let config = bounded().with_dead_ends(dead_ends);
             let goal = |s: &usize| table.is_goal(*s);
             let solution = match algorithm {
                 0 => lrtdp(&table, 0, &goal, &mut heuristic, config),
@@ -125,22 +123,10 @@ fn config_is_validated() {
     let table = ssp(3, 1, Shape::Proper);
     let goal = |s: &usize| table.is_goal(*s);
     let configs = [
-        Config {
-            epsilon: 0.0,
-            ..bounded()
-        },
-        Config {
-            epsilon: f64::NAN,
-            ..bounded()
-        },
-        Config {
-            dead_ends: DeadEnds::Penalty(f64::INFINITY),
-            ..bounded()
-        },
-        Config {
-            max_trial_length: 0,
-            ..bounded()
-        },
+        bounded().with_epsilon(0.0),
+        bounded().with_epsilon(f64::NAN),
+        bounded().with_dead_ends(DeadEnds::Penalty(f64::INFINITY)),
+        bounded().with_max_trial_length(0),
     ];
 
     for config in configs {
@@ -210,11 +196,7 @@ fn value_iteration_exploration_is_budgeted() {
 /// state limit lowered from its default to keep the test small).
 #[test]
 fn default_limits_stop_unbounded_runs() {
-    let config = Config {
-        epsilon: 1e-4,
-        ..Config::default()
-    }
-    .with_budget(Limits {
+    let config = Config::default().with_epsilon(1e-4).with_budget(Limits {
         max_states: Some(10_000),
         ..Limits::DEFAULT
     });

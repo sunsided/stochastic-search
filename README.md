@@ -1,16 +1,17 @@
 # stochastic-search
 
-Planning under probabilistic outcomes: LAO*, iLAO*, RTDP, LRTDP, BRTDP, POMCP and DESPOT.
+Planning under probabilistic outcomes: LAO*, iLAO*, RTDP, LRTDP, BRTDP, FRTDP, VPI-RTDP, POMCP and DESPOT.
 
 ## Scope
 
 - Implemented: value iteration, RTDP, labeled RTDP (LRTDP), classic LAO* and iLAO* for stochastic
   shortest path problems, with infinite or finite-penalty dead ends
-- Implemented: bounded RTDP (BRTDP) with lower and upper bounds; upper bounds must be
-  finite, so infinite dead ends need a lower bound that proves them (or use a penalty)
+- Implemented: bounded RTDP (BRTDP), focused RTDP (FRTDP) and VPI-RTDP with lower and upper
+  bounds and an upper-greedy policy; upper bounds must be finite, so infinite dead ends need
+  a lower bound that proves them (or use a penalty)
 - Implemented: a generative POMDP model with one-shot online planners POMCP and anytime
   regularized DESPOT (Ye et al. 2017) over particle beliefs
-- Planned: CG-iLAO*, FRTDP; belief tracking and tree reuse between
+- Planned: CG-iLAO*; belief tracking and tree reuse between
   POMDP decisions
 
 - Shared traits: `Goal`, `Heuristic`, `heuristic_fn` and `Budget` come from
