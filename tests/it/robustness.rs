@@ -3,7 +3,8 @@
 
 use proptest::prelude::*;
 use stochastic_search::{
-    Config, DeadEnds, Error, Heuristic, Limits, Status, Zero, heuristic_fn, lrtdp, value_iteration,
+    Config, DeadEnds, Error, Heuristic, Limits, Status, Zero, heuristic_fn, ilao_star, lrtdp, rtdp,
+    value_iteration,
 };
 
 use crate::properties::assert_consistent;
@@ -23,8 +24,8 @@ fn bounded() -> Config {
 proptest! {
     #![proptest_config(ProptestConfig::with_cases(64))]
 
-    /// Inadmissible and otherwise wrong (but not NaN) heuristics never panic: each run
-    /// returns a solution.
+    /// Inadmissible and otherwise wrong (but not NaN) heuristics never panic in LRTDP, RTDP
+    /// or iLAO*: each run returns a solution.
     #[test]
     fn bad_heuristics_do_not_crash(states in 2_usize..10, seed in any::<u64>(), kind in 0_u8..5) {
         let table = ssp(states, seed, Shape::Traps);
@@ -39,9 +40,17 @@ proptest! {
             }
         });
 
-        for dead_ends in [DeadEnds::Infinite, DeadEnds::Penalty(20.0)] {
+        for (dead_ends, algorithm) in [DeadEnds::Infinite, DeadEnds::Penalty(20.0)]
+            .into_iter()
+            .flat_map(|dead_ends| [0, 1, 2].map(|algorithm| (dead_ends, algorithm)))
+        {
             let config = Config { dead_ends, ..bounded() };
-            let solution = lrtdp(&table, 0, &|s: &usize| table.is_goal(*s), &mut heuristic, config);
+            let goal = |s: &usize| table.is_goal(*s);
+            let solution = match algorithm {
+                0 => lrtdp(&table, 0, &goal, &mut heuristic, config),
+                1 => rtdp(&table, 0, &goal, &mut heuristic, config),
+                _ => ilao_star(&table, 0, &goal, &mut heuristic, config),
+            };
             prop_assert!(solution.is_ok());
 
             // The frozen policy keeps its residual bound even for bad heuristics.

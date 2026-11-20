@@ -214,7 +214,7 @@ infinite value, and VI runs from `0` on the rest, which converges under the posi
 assumption. Sweeps stop when the largest residual is below epsilon. It exists to check
 LRTDP; it is not meant for large problems.
 
-### RTDP and LRTDP (milestone 1: LRTDP)
+### RTDP and LRTDP (milestones 1 and 2)
 
 RTDP (Barto, Bradtke and Singh 1995) runs trials from `s0`: back up the current state, take
 the greedy action, sample a successor, repeat until a goal. With an admissible heuristic
@@ -310,15 +310,37 @@ of the cached outcome list in emission order. If rounding leaves `u` past the la
 the last outcome is taken. Together with insertion-ordered ids and first-wins tie
 breaking, one seed gives bit-identical values, policies and statistics.
 
-### LAO* and iLAO* (milestone 2)
+Plain RTDP (`rtdp`) is the same run without labels: trials never unwind through
+`checkSolved`. As its stopping rule, `checkSolved` runs on `s0` alone between trials, without
+the repair backups, and labels the envelope when it passes. A check costs about one
+evaluation per envelope state, so it only runs once at least as many backups happened since
+the last check as that check took; checks then take at most half of a run's backups. Since
+the passing check is LRTDP's, a converged RTDP run has LRTDP's guarantee. Dead-end proofs
+and events are shared too.
+
+### LAO* and iLAO* (milestone 2: iLAO*)
 
 LAO* (Hansen and Zilberstein 2001) is AO* for cyclic AND/OR graphs: keep an explicit
 graph and the best partial solution graph; expand a tip of the best solution graph; run
 value (or policy) iteration on the ancestors of the expanded states; repeat until the best
 solution graph has no unexpanded non-goal tips, then run a convergence test. iLAO* from the
 same paper expands all tips of the best solution graph in one depth-first traversal and
-backs up states in postorder during that same traversal, which is the variant worth
-implementing first. Both reuse `space` and the backup code.
+backs up states in postorder during that same traversal. Only iLAO* is implemented
+(`ilao_star`): it needs no ancestor sets and is the variant the paper recommends.
+
+Implementation, on the LRTDP run (`space`, meter, dead-end proofs and events shared):
+
+- a pass is an explicit-stack depth-first search from `s0` over the stored greedy actions,
+  with `Node::mark` epochs. An unexpanded state is a tip: it is expanded and backed up, and
+  the pass does not descend below it. Other states are backed up in postorder;
+- the paper's convergence test is a pass that expands nothing and whose largest residual is
+  below epsilon. A postorder backup can still flip a greedy action towards states the pass
+  did not visit, so a settled pass is followed by `checkSolved` on `s0` (no repair
+  backups); only a passing check ends the run. The result is closed under the final
+  policy and has LRTDP's guarantee verbatim;
+- under `DeadEnds::Infinite`, values in a trap rise with every pass; the doubling trigger of
+  the dead-end proof catches them as in LRTDP;
+- passes count in `Stats::sweeps`.
 
 ### CG-iLAO* (milestone 3)
 
@@ -384,8 +406,8 @@ overestimates are allowed (they only void the optimality bound). Neither panics.
 ## Milestones
 
 1. Model traits, explicit state space, value iteration, LRTDP, tests. (this draft)
-2. Plain RTDP (with a trial budget, no labels), LAO* and iLAO*, sharing `space`; Bounded
-   RTDP or FRTDP as upper-bound variants if a consumer needs an anytime gap.
+2. Plain RTDP and iLAO*, sharing `space` and the LRTDP run. (done) Bounded RTDP or FRTDP
+   as upper-bound variants if a consumer needs an anytime gap; one-tip LAO*.
 3. CG-iLAO*; policy evaluation utilities (exact evaluation of a fixed policy by linear
    solve or iteration); discounted MDP adapter.
 4. Belief-space trait set; POMCP; DESPOT. Decide then whether that becomes `pomdp-search`.

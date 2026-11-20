@@ -3,12 +3,14 @@
 /// Counters collected during one run of an algorithm.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct Stats {
-    /// Bellman backups that wrote a value. LRTDP's solved checks also evaluate the Bellman
-    /// equation; those evaluations count here too, since they cost the same.
+    /// Bellman backups that wrote a value. The solved checks of LRTDP, RTDP and iLAO* also
+    /// evaluate the Bellman equation; those evaluations count here too, since they cost the
+    /// same.
     pub backups: u64,
-    /// LRTDP trials started. Always `0` for value iteration.
+    /// LRTDP and RTDP trials started. Always `0` for value iteration and iLAO*.
     pub trials: u64,
-    /// Value iteration sweeps over the state space. Always `0` for LRTDP.
+    /// Value iteration sweeps over the state space, or iLAO* passes over the greedy graph.
+    /// Always `0` for LRTDP and RTDP.
     pub sweeps: u64,
     /// States whose actions and outcomes were queried from the MDP.
     pub expanded: u64,
@@ -63,7 +65,7 @@ impl<F: FnMut(&Stats) -> bool> Budget for F {
 pub struct Limits {
     /// Stop once this many Bellman backups have been performed. `None` is unbounded.
     pub max_backups: Option<u64>,
-    /// Stop once this many LRTDP trials have been started. `None` is unbounded.
+    /// Stop once this many LRTDP or RTDP trials have been started. `None` is unbounded.
     pub max_trials: Option<u64>,
     /// Stop once this many states are stored. `None` is unbounded.
     ///

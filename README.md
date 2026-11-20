@@ -4,9 +4,9 @@ Planning under probabilistic outcomes: LAO*, iLAO*, RTDP, LRTDP, POMCP and DESPO
 
 ## Scope
 
-- Implemented: labeled RTDP (LRTDP) and value iteration for stochastic shortest path
-  problems, with infinite or finite-penalty dead ends
-- Planned: RTDP; AND/OR heuristic search (LAO*, iLAO*, CG-iLAO*); belief space (POMCP, DESPOT)
+- Implemented: value iteration, RTDP, labeled RTDP (LRTDP) and iLAO* for stochastic
+  shortest path problems, with infinite or finite-penalty dead ends
+- Planned: one-tip LAO*, CG-iLAO*, Bounded RTDP; belief space (POMCP, DESPOT)
 
 See [docs/design.md](docs/design.md) for the model, guarantees and milestones.
 

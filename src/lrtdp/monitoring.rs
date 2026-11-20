@@ -25,7 +25,7 @@ where
     /// once at least as many backups as stored states plus outcomes happened since the last
     /// one: each analysis round is linear in the stored graph, so its cost stays proportional
     /// to the search effort.
-    pub(super) fn maybe_prove_dead_ends(&mut self, cut_off: bool) {
+    pub(crate) fn maybe_prove_dead_ends(&mut self, cut_off: bool) {
         let work = (self.space.len() + self.space.outcome_count()) as u64;
         let backups = self.meter.stats.backups;
         let doubled = backups >= self.analyzed_at.saturating_mul(2);
@@ -43,7 +43,7 @@ where
 
     /// Feeds the initial value to the divergence watcher and reports steady growth.
     /// Does nothing for a disabled observer.
-    pub(super) fn track_divergence(&mut self) {
+    pub(crate) fn track_divergence(&mut self) {
         if !O::ENABLED {
             return;
         }
@@ -60,7 +60,7 @@ where
     }
 
     /// Emits a progress event if one is due. Does nothing for a disabled observer.
-    pub(super) fn report_progress(&mut self) {
+    pub(crate) fn report_progress(&mut self) {
         if self.meter.progress_due() {
             let value = self.space.node(self.start).value;
             self.meter

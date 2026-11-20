@@ -24,14 +24,15 @@ where
     O: Observer,
 {
     /// Labels `start` and its greedy envelope solved if every unsolved state in it has a
-    /// residual of at most epsilon; otherwise backs up the visited states in reverse order.
+    /// residual of at most epsilon; otherwise, if `repair` (LRTDP), backs up the visited
+    /// states in reverse order.
     ///
     /// Returns whether the states were labeled.
     ///
     /// # Errors
     ///
     /// Returns [`Halt`] when the budget runs out or the input is invalid.
-    pub(super) fn check_solved(&mut self, start: Id) -> Result<bool, Halt<M::State>> {
+    pub(crate) fn check_solved(&mut self, start: Id, repair: bool) -> Result<bool, Halt<M::State>> {
         let mut open = mem::take(&mut self.open);
         let mut closed = mem::take(&mut self.closed);
         open.clear();
@@ -43,7 +44,8 @@ where
                 self.label_solved(&closed);
                 Ok(true)
             }
-            Ok(false) => self.back_up_reversed(&closed).map(|()| false),
+            Ok(false) if repair => self.back_up_reversed(&closed).map(|()| false),
+            Ok(false) => Ok(false),
             Err(halt) => Err(halt),
         };
 
@@ -146,7 +148,7 @@ where
 
     /// Starts a new visit epoch. Clears all marks when the counter wraps, so a stale mark
     /// never matches.
-    fn next_epoch(&mut self) -> u32 {
+    pub(crate) fn next_epoch(&mut self) -> u32 {
         self.epoch = self.epoch.wrapping_add(1);
         if self.epoch == 0 {
             for node in self.space.nodes_mut() {

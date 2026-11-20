@@ -1,14 +1,16 @@
-//! Hand-made SSPs with closed-form answers, solved by both algorithms.
+//! Hand-made SSPs with closed-form answers, solved by every SSP algorithm.
 
-use stochastic_search::{Config, DeadEnds, Limits, Solution, Status, Zero, lrtdp, value_iteration};
+use stochastic_search::{
+    Config, DeadEnds, Limits, Solution, Status, Zero, ilao_star, lrtdp, rtdp, value_iteration,
+};
 
 use crate::table::{Table, action};
 
 /// Tolerance for closed-form comparisons; LRTDP runs with a tighter epsilon.
 const TOLERANCE: f64 = 1e-6;
 
-/// Solves `table` from state 0 with both algorithms under `dead_ends`.
-fn solve_both(table: &Table, dead_ends: DeadEnds) -> [Solution<usize, usize>; 2] {
+/// Solves `table` from state 0 with value iteration, LRTDP, RTDP and iLAO* under `dead_ends`.
+fn solve_both(table: &Table, dead_ends: DeadEnds) -> [Solution<usize, usize>; 4] {
     let config = Config {
         epsilon: 1e-10,
         dead_ends,
@@ -20,6 +22,8 @@ fn solve_both(table: &Table, dead_ends: DeadEnds) -> [Solution<usize, usize>; 2]
     [
         value_iteration(table, 0, &goal, config).expect("valid input"),
         lrtdp(table, 0, &goal, Zero, config).expect("valid input"),
+        rtdp(table, 0, &goal, Zero, config).expect("valid input"),
+        ilao_star(table, 0, &goal, Zero, config).expect("valid input"),
     ]
 }
 
@@ -90,8 +94,9 @@ fn unavoidable_dead_end() {
     }
 }
 
-/// An unavoidable trap cycle under infinite dead-end cost: both algorithms prove it by graph
-/// analysis, LRTDP after its trials get cut off, and with the default configuration.
+/// An unavoidable trap cycle under infinite dead-end cost: every algorithm proves it by graph
+/// analysis with the default configuration (RTDP and LRTDP after their trials get cut off,
+/// iLAO* once its backups double).
 #[test]
 fn unavoidable_trap_cycle_is_unsolvable() {
     let table = Table {
@@ -108,10 +113,16 @@ fn unavoidable_trap_cycle_is_unsolvable() {
     assert_eq!(exact.status(), Status::Unsolvable);
     assert_eq!(exact.initial_value(), f64::INFINITY);
 
-    let proven = lrtdp(&table, 0, &goal, Zero, Config::default()).expect("valid input");
-    assert_eq!(proven.status(), Status::Unsolvable);
-    assert_eq!(proven.initial_value(), f64::INFINITY);
-    assert_eq!(proven.initial_action(), None);
+    for proven in [
+        lrtdp(&table, 0, &goal, Zero, Config::default()),
+        rtdp(&table, 0, &goal, Zero, Config::default()),
+        ilao_star(&table, 0, &goal, Zero, Config::default()),
+    ] {
+        let proven = proven.expect("valid input");
+        assert_eq!(proven.status(), Status::Unsolvable);
+        assert_eq!(proven.initial_value(), f64::INFINITY);
+        assert_eq!(proven.initial_action(), None);
+    }
 }
 
 /// A short trial length limit proves the trap long before a generous budget runs out.

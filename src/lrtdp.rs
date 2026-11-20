@@ -20,12 +20,13 @@ use alloc::vec::Vec;
 use crate::budget::Budget;
 use crate::config::Config;
 
+use crate::error::Error;
 use crate::lrtdp::divergence::Divergence;
 use crate::meter::{Halt, Meter, finish};
 use crate::model::{Goal, Heuristic, Mdp};
 use crate::observer::Observer;
 use crate::rng::SplitMix64;
-use crate::solution::{Solution, SolveResult};
+use crate::solution::{Solution, SolveResult, Status};
 use crate::space::{Id, Problem, Space};
 
 /// Solves an SSP from `initial` with labeled RTDP.
@@ -153,73 +154,52 @@ where
     B: Budget,
     O: Observer,
 {
-    config.validate()?;
-    let mut problem = Problem {
-        mdp,
-        goal,
-        heuristic,
-        cap: config.dead_ends.cap(),
-    };
+    let mut run = Run::new(mdp, initial, goal, heuristic, config)?;
+    let status = finish(run.solve(true))?;
 
-    let mut space = Space::new(problem.cap);
-    let start = space.intern(&mut problem, initial)?;
-    let mut run = Run {
-        problem,
-        epsilon: config.epsilon,
-        max_trial_length: config.max_trial_length,
-        rng: SplitMix64::new(config.seed),
-        divergence: Divergence::new(config.divergence_window, space.node(start).value),
-        space,
-        meter: Meter::new(config),
-        start,
-        start_residual: f64::INFINITY,
-        epoch: 0,
-        analyzed_at: 0,
-        trail: Vec::new(),
-        open: Vec::new(),
-        closed: Vec::new(),
-    };
-
-    let status = finish(run.solve())?;
-    run.meter.sync(&run.space);
-
-    Ok(Solution::new(run.space, start, status, run.meter.stats))
+    Ok(run.into_solution(status))
 }
 
-/// The state of one LRTDP run.
-struct Run<'a, M: Mdp, G, H, B, O> {
+/// The state of one trial-based or depth-first run over a lazily built space: LRTDP, plain
+/// RTDP ([`rtdp`](crate::rtdp())) and iLAO* ([`ilao_star`](crate::ilao_star())) share it,
+/// including its solved check, dead-end proofs and events.
+pub(crate) struct Run<'a, M: Mdp, G, H, B, O> {
     /// The problem being solved.
-    problem: Problem<'a, M, G, H>,
+    pub(crate) problem: Problem<'a, M, G, H>,
     /// The states touched so far, with values, labels and policy.
-    space: Space<M::State, M::Action>,
+    pub(crate) space: Space<M::State, M::Action>,
     /// The residual threshold for labeling.
-    epsilon: f64,
+    pub(crate) epsilon: f64,
     /// The step limit of one trial.
-    max_trial_length: usize,
+    pub(crate) max_trial_length: usize,
     /// Budget, counters and observer.
-    meter: Meter<B, O>,
+    pub(crate) meter: Meter<B, O>,
     /// The initial state.
-    start: Id,
+    pub(crate) start: Id,
     /// The change of the initial state's value at its most recent backup, for progress
     /// events.
-    start_residual: f64,
+    pub(crate) start_residual: f64,
     /// Watches the initial value for steady growth, for divergence events.
     divergence: Divergence,
     /// The successor sampler.
-    rng: SplitMix64,
+    pub(crate) rng: SplitMix64,
     /// The epoch of the current solved check, compared against [`Node::mark`](crate::space::Node).
-    epoch: u32,
+    pub(crate) epoch: u32,
     /// The backup count at the last dead-end analysis; see [`Run::maybe_prove_dead_ends`].
-    analyzed_at: u64,
+    pub(crate) analyzed_at: u64,
+    /// Plain RTDP: the backup count when the last convergence check finished.
+    pub(crate) checked_at: u64,
+    /// Plain RTDP: the backups the last convergence check took.
+    pub(crate) check_cost: u64,
     /// Reused buffer: the states of the current trial, in visiting order.
-    trail: Vec<Id>,
+    pub(crate) trail: Vec<Id>,
     /// Reused buffer: the frontier of a solved check.
-    open: Vec<Id>,
+    pub(crate) open: Vec<Id>,
     /// Reused buffer: the states a solved check visited.
-    closed: Vec<Id>,
+    pub(crate) closed: Vec<Id>,
 }
 
-impl<M, G, H, B, O> Run<'_, M, G, H, B, O>
+impl<'a, M, G, H, B, O> Run<'a, M, G, H, B, O>
 where
     M: Mdp,
     M::State: Clone + Eq + Hash,
@@ -228,18 +208,78 @@ where
     B: Budget,
     O: Observer,
 {
+    /// Validates `config` and sets up a run from `initial` with an empty space.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::InvalidConfig`](crate::Error::InvalidConfig) for an invalid
+    /// configuration and [`Error::InvalidHeuristic`](crate::Error::InvalidHeuristic) for an
+    /// invalid estimate of `initial`.
+    pub(crate) fn new(
+        mdp: &'a M,
+        initial: M::State,
+        goal: &'a G,
+        heuristic: H,
+        config: Config<B, O>,
+    ) -> Result<Self, Error<M::State>> {
+        config.validate()?;
+        let mut problem = Problem {
+            mdp,
+            goal,
+            heuristic,
+            cap: config.dead_ends.cap(),
+        };
+
+        let mut space = Space::new(problem.cap);
+        let start = space.intern(&mut problem, initial)?;
+
+        Ok(Self {
+            problem,
+            epsilon: config.epsilon,
+            max_trial_length: config.max_trial_length,
+            rng: SplitMix64::new(config.seed),
+            divergence: Divergence::new(config.divergence_window, space.node(start).value),
+            space,
+            meter: Meter::new(config),
+            start,
+            start_residual: f64::INFINITY,
+            epoch: 0,
+            analyzed_at: 0,
+            checked_at: 0,
+            check_cost: 0,
+            trail: Vec::new(),
+            open: Vec::new(),
+            closed: Vec::new(),
+        })
+    }
+
+    /// Ends the run with `status` and hands its space to a [`Solution`].
+    pub(crate) fn into_solution(mut self, status: Status) -> Solution<M::State, M::Action> {
+        self.meter.sync(&self.space);
+
+        Solution::new(self.space, self.start, status, self.meter.stats)
+    }
+
     /// Runs trials until the initial state is solved, proving dead ends and reporting
     /// events between trials.
+    ///
+    /// With `labeled` (LRTDP), every trial is unwound through the solved checks. Without
+    /// (plain RTDP), nothing is labeled during trials; the initial state's envelope is
+    /// checked on the schedule of [`Run::maybe_check_converged`] instead.
     ///
     /// # Errors
     ///
     /// Returns [`Halt`] when the budget runs out or the input is invalid.
-    fn solve(&mut self) -> Result<(), Halt<M::State>> {
+    pub(crate) fn solve(&mut self, labeled: bool) -> Result<(), Halt<M::State>> {
         let start = self.start;
         while !self.space.node(start).solved {
             self.meter.check(&self.space)?;
             self.meter.stats.trials += 1;
-            self.trial(start)?;
+            self.trial(start, labeled)?;
+            if !labeled {
+                self.maybe_check_converged()?;
+            }
+
             self.maybe_prove_dead_ends(false);
             self.track_divergence();
         }
@@ -247,12 +287,12 @@ where
         Ok(())
     }
 
-    /// Runs one trial from `start` and unwinds it through the solved checks.
+    /// Runs one trial from `start` and, if `labeled`, unwinds it through the solved checks.
     ///
     /// # Errors
     ///
     /// Returns [`Halt`] when the budget runs out or the input is invalid.
-    fn trial(&mut self, start: Id) -> Result<(), Halt<M::State>> {
+    fn trial(&mut self, start: Id, labeled: bool) -> Result<(), Halt<M::State>> {
         let mut trail = mem::take(&mut self.trail);
         trail.clear();
 
@@ -261,7 +301,11 @@ where
                 self.maybe_prove_dead_ends(true);
             }
 
-            self.unwind(&mut trail)
+            if labeled {
+                self.unwind(&mut trail)
+            } else {
+                Ok(())
+            }
         });
         self.trail = trail;
 
@@ -303,7 +347,7 @@ where
     /// Returns [`Halt`] when the budget runs out or the input is invalid.
     fn unwind(&mut self, trail: &mut Vec<Id>) -> Result<(), Halt<M::State>> {
         while let Some(state) = trail.pop() {
-            if !self.check_solved(state)? {
+            if !self.check_solved(state, true)? {
                 break;
             }
         }
@@ -311,12 +355,12 @@ where
         Ok(())
     }
 
-    /// Expands `state` if needed and backs it up.
+    /// Expands `state` if needed, backs it up and returns its residual.
     ///
     /// # Errors
     ///
     /// Returns [`Halt`] when the budget runs out or the input is invalid.
-    fn backup(&mut self, state: Id) -> Result<(), Halt<M::State>> {
+    pub(crate) fn backup(&mut self, state: Id) -> Result<f64, Halt<M::State>> {
         self.space.expand(&mut self.problem, state)?;
         self.meter.charge_backup(&self.space)?;
         let residual = self.space.update(state);
@@ -325,6 +369,30 @@ where
         }
 
         self.report_progress();
+
+        Ok(residual)
+    }
+
+    /// Plain RTDP: checks whether the initial state's greedy envelope is
+    /// epsilon-consistent, and labels it solved (ending the run) if so.
+    ///
+    /// A check costs about one evaluation per envelope state, so it only runs once at least
+    /// as many backups happened since the last check as that check took: checks take at
+    /// most half the run's backups. Delaying a check never changes the values, only when the
+    /// run notices convergence.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Halt`] when the budget runs out or the input is invalid.
+    fn maybe_check_converged(&mut self) -> Result<(), Halt<M::State>> {
+        let before = self.meter.stats.backups;
+        if before - self.checked_at < self.check_cost {
+            return Ok(());
+        }
+
+        self.check_solved(self.start, false)?;
+        self.checked_at = self.meter.stats.backups;
+        self.check_cost = self.checked_at - before;
 
         Ok(())
     }

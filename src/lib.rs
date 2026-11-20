@@ -1,7 +1,7 @@
 //! # Stochastic search
 //!
-//! Planning under probabilistic outcomes: value iteration and labeled RTDP today; LAO*,
-//! iLAO*, CG-iLAO*, POMCP and DESPOT planned.
+//! Planning under probabilistic outcomes: value iteration, RTDP, labeled RTDP and iLAO* for
+//! fully observable problems.
 //!
 //! A problem is a stochastic shortest path (SSP) problem: reach a goal state with minimal
 //! expected total cost, where every action has a cost and a probability distribution over
@@ -18,6 +18,10 @@
 //!
 //! - [`lrtdp()`]: labeled real-time dynamic programming (Bonet and Geffner 2003). Explores only
 //!   the states a good policy visits; epsilon-consistent on them when it converges.
+//! - [`rtdp()`]: plain RTDP (Barto, Bradtke and Singh 1995), with LRTDP's solved check as
+//!   its stopping rule. The classic baseline.
+//! - [`ilao_star()`]: improved LAO* (Hansen and Zilberstein 2001). Grows the best partial
+//!   solution graph in depth-first passes; no sampling.
 //! - [`value_iteration()`]: value iteration over every reachable state. The exact reference.
 //!
 //! ## Dead ends
@@ -71,8 +75,7 @@
 //!
 //! ## Planned scope
 //!
-//! - Real-time dynamic programming: RTDP
-//! - AND/OR heuristic search: LAO*, iLAO*, CG-iLAO*
+//! - AND/OR heuristic search: LAO* (the one-tip-at-a-time variant), CG-iLAO*
 //! - Belief space: POMCP, DESPOT
 //!
 //! See `docs/design.md` in the repository for the design and milestones.
@@ -91,11 +94,13 @@ extern crate alloc;
 mod budget;
 mod config;
 mod error;
+mod ilao;
 mod lrtdp;
 mod meter;
 mod model;
 mod observer;
 mod rng;
+mod rtdp;
 mod solution;
 mod space;
 mod value_iteration;
@@ -103,8 +108,10 @@ mod value_iteration;
 pub use budget::{Budget, Limits, Stats};
 pub use config::{Config, DeadEnds};
 pub use error::{Error, PROBABILITY_TOLERANCE};
+pub use ilao::ilao_star;
 pub use lrtdp::lrtdp;
 pub use model::{Goal, Heuristic, HeuristicFn, Mdp, Zero, heuristic_fn};
 pub use observer::{Event, Observer, ObserverFn, observer_fn};
+pub use rtdp::rtdp;
 pub use solution::{Solution, SolveResult, Status};
 pub use value_iteration::value_iteration;
