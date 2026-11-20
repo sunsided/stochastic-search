@@ -6,6 +6,7 @@ mod bounds;
 mod events;
 mod fixtures;
 mod oracle;
+mod pbvi;
 mod planners;
 mod pomdps;
 mod properties;

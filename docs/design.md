@@ -575,6 +575,10 @@ overestimates are allowed (they only void the optimality bound). Neither panics.
 - Belief space: Tiger and a one-rock RockSample, with the expected first action and its
   margin derived by hand in each test, over four seeds, for POMCP and DESPOT; determinism
   per seed; input validation; DESPOT's bound invariants as unit tests.
+- PBVI oracle (tests only): point-based value iteration on Tiger's explicit model over 101
+  belief points reproduces the known value (19.37 at the uniform belief); POMCP and DESPOT
+  must pick PBVI's action on four seeds wherever PBVI's Q-margin is at least 5. Values are
+  not compared (POMCP is biased, DESPOT's bounds hold for its scenarios only).
 - Proptest case counts are fixed in code (64), so `cargo test` stays fast.
 
 ## Milestones
