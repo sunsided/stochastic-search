@@ -97,10 +97,12 @@ picks one of two semantics through `DeadEnds`:
   is exact when a proper policy from `s0` exists. If none exists, `V(s0)` is infinite and
   the policy is empty at `s0`. The third kind of dead end is only detected by value
   iteration (through an almost-sure reachability pre-pass); LRTDP sees it as values that
-  keep rising, and the trial length limit and the budget keep it from hanging.
+  keep rising. If such a trap is avoidable, the trial length limit lets LRTDP climb out of
+  it and converge; if no proper policy exists from `s0` and a trap cycle is reachable,
+  LRTDP never converges and only the budget stops it (tested).
 - `DeadEnds::Penalty(d)` (the fSSPUDE semantics of Kolobov, Mausam and Weld 2012). Every
   non-goal state gets an implicit "give up" action that costs `d` and ends planning. Values
-  are capped at `d`, every policy is proper, and all three algorithms converge on any
+  are capped at `d`, every policy is proper, and all algorithms converge on any
   input. A state whose value is `d` has no action in the returned policy.
 
 The finite penalty is the robust choice for domains with avoidable traps; the infinite one
@@ -269,7 +271,9 @@ wrong:
 - `Error::InvalidProbability`: a probability is NaN or outside `(0, 1]`;
 - `Error::ProbabilitySum`: an action's outcomes do not sum to 1 within the tolerance
   (including an action with no outcomes);
-- `Error::InvalidHeuristic`: the heuristic returned NaN.
+- `Error::InvalidHeuristic`: the heuristic returned NaN or negative infinity;
+- `Error::InvalidConfig`: epsilon not finite and positive, a penalty not finite and
+  non-negative, or a zero trial length.
 
 Negative heuristic values are allowed (they are admissible, only uninformative), and
 overestimates are allowed (they only void the optimality bound). Neither panics.
