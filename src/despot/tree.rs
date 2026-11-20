@@ -1,6 +1,7 @@
 //! DESPOT's sparse belief tree: nodes with their scenarios and bounds, and the per-action
 //! branches between them.
 
+use alloc::collections::VecDeque;
 use alloc::vec::Vec;
 
 /// Marks a node whose action branches are not created yet.
@@ -23,6 +24,9 @@ pub(super) struct Node<S> {
     pub(super) parent: Option<u32>,
     /// The scenarios passing through this node, with their states here. Never empty.
     pub(super) scenarios: Vec<(u32, S)>,
+    /// The average of the caller's upper bound over the scenarios, before backups; kept
+    /// so that re-rooting can re-initialize the node.
+    pub(super) heuristic_upper: f64,
     /// `U(b)`: an upper bound on the scenarios' average return from here. At least
     /// `default_value`.
     pub(super) upper: f64,
@@ -42,6 +46,25 @@ pub(super) struct Node<S> {
     /// Set by `MakeDefault`: the node is fixed to the default policy and never expanded or
     /// backed up from children again.
     pub(super) fixed: bool,
+}
+
+impl<S> Node<S> {
+    /// A copy of the node's numbers, with no scenarios.
+    fn clone_without_scenarios(&self) -> Self {
+        Self {
+            depth: self.depth,
+            parent: self.parent,
+            scenarios: Vec::new(),
+            heuristic_upper: self.heuristic_upper,
+            upper: self.upper,
+            default_value: self.default_value,
+            default_utility: self.default_utility,
+            mu: self.mu,
+            ell: self.ell,
+            first_branch: self.first_branch,
+            fixed: self.fixed,
+        }
+    }
 }
 
 /// The branch of one action below a node.
@@ -91,6 +114,45 @@ impl<S, O> Tree<S, O> {
         self.nodes.push(node);
 
         id
+    }
+
+    /// The subtree below `root` as a tree of its own, with `root` as [`ROOT`] (without a
+    /// parent) and node ids renumbered breadth-first, so children keep larger ids than
+    /// their parents. Branches of expanded nodes come along, `actions` per node.
+    pub(super) fn into_subtree(mut self, root: u32, actions: usize) -> Self {
+        let mut tree = Self {
+            nodes: Vec::new(),
+            branches: Vec::new(),
+        };
+        let mut queue = VecDeque::from([(root, None)]);
+        while let Some((old, parent)) = queue.pop_front() {
+            let id = u32::try_from(tree.nodes.len()).expect("at most u32::MAX nodes");
+            let mut node = self.nodes[old as usize].clone_without_scenarios();
+            node.scenarios = core::mem::take(&mut self.nodes[old as usize].scenarios);
+            node.parent = parent;
+            if node.first_branch != UNEXPANDED {
+                let first = node.first_branch as usize;
+                node.first_branch =
+                    u32::try_from(tree.branches.len()).expect("at most u32::MAX branches");
+                for branch in &mut self.branches[first..first + actions] {
+                    let mut children = core::mem::take(&mut branch.children);
+                    for (_, child) in &mut children {
+                        let position = tree.nodes.len() + 1 + queue.len();
+                        queue.push_back((*child, Some(id)));
+                        *child = u32::try_from(position).expect("at most u32::MAX nodes");
+                    }
+
+                    tree.branches.push(Branch {
+                        reward_sum: branch.reward_sum,
+                        children,
+                    });
+                }
+            }
+
+            tree.nodes.push(node);
+        }
+
+        tree
     }
 
     /// Sets `id` to the default policy (`MakeDefault`): `U = L0`, `mu = ell = l0`.

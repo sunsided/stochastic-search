@@ -40,6 +40,9 @@
 //!   over action-observation histories with rollouts.
 //! - [`despot()`]: anytime regularized DESPOT (Somani et al. 2013, Ye et al. 2017). Bound
 //!   guided search over a tree of `K` determinized scenarios.
+//! - [`Pomcp`] and [`Despot`]: the same planners kept between decisions, reusing the subtree
+//!   after the action taken and the observation received; [`update_belief`] is POMCP's
+//!   particle filter with reinvigoration.
 //!
 //! ## The heuristic contract
 //!
@@ -113,7 +116,6 @@
 //! ## Planned scope
 //!
 //! - AND/OR heuristic search: CG-iLAO*
-//! - Belief tracking between POMDP decisions (POMCP's particle reinvigoration, tree reuse)
 //!
 //! See `docs/design.md` in the repository for the design and milestones.
 //!
@@ -154,7 +156,7 @@ pub use bounds::frtdp::{FrtdpConfig, frtdp};
 pub use bounds::vpi::{VpiRtdpConfig, vpi_rtdp};
 pub use budget::{Budget, Limits, Stats, TreeStats};
 pub use config::{Config, DeadEnds};
-pub use despot::{DespotConfig, despot};
+pub use despot::{Despot, DespotConfig, despot};
 pub use error::{Error, PROBABILITY_TOLERANCE};
 pub use ilao::ilao_star;
 pub use lao::lao_star;

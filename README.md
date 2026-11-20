@@ -9,10 +9,11 @@ Planning under probabilistic outcomes: LAO*, iLAO*, RTDP, LRTDP, BRTDP, FRTDP, V
 - Implemented: bounded RTDP (BRTDP), focused RTDP (FRTDP) and VPI-RTDP with lower and upper
   bounds and an upper-greedy policy; upper bounds must be finite, so infinite dead ends need
   a lower bound that proves them (or use a penalty)
-- Implemented: a generative POMDP model with one-shot online planners POMCP and anytime
-  regularized DESPOT (Ye et al. 2017) over particle beliefs
-- Planned: CG-iLAO*; belief tracking and tree reuse between
-  POMDP decisions
+- Implemented: a generative POMDP model with online planners POMCP and anytime regularized
+  DESPOT (Ye et al. 2017) over particle beliefs, with tree reuse between decisions, a
+  particle filter with reinvigoration, POMCP exploration calibration, progress events and
+  dedicated tree counters
+- Planned: CG-iLAO*
 
 - Shared traits: `Goal`, `Heuristic`, `heuristic_fn` and `Budget` come from
   `search-core` and are re-exported here. Breaking: `Budget` bounds are

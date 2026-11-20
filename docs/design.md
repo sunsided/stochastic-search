@@ -1,6 +1,7 @@
 # stochastic-search: design
 
-Status: draft on branch `draft/initial`; milestones 1, 2 (RTDP, iLAO*) and 4 (one-shot POMCP and DESPOT) implemented.
+Status: draft on branch `draft/initial`; milestones 1, 2 (RTDP, LAO*, iLAO*, BRTDP, FRTDP, VPI-RTDP) and 4 (POMCP and DESPOT with
+tree reuse and belief tracking) implemented.
 
 ## Goal and scope
 
@@ -463,9 +464,23 @@ pub trait RolloutPolicy<S> { fn action<R: Rng + ?Sized>(&mut self, state: &S,
   heuristic is for SSPs. `UniformRandom` is the knowledge-free policy. In Tiger at depth
   60 it buries the first step's difference under rollout noise (random opens cost 45 in
   expectation); the tests use the usual domain policies (always listen, head east).
-- Beliefs are particle slices with equal weights. Both planners are one-shot: belief in,
-  `Plan { action, value, status, stats }` out. Belief tracking between decisions (POMCP's
-  in-tree particle filter, reinvigoration, tree reuse) is left to the caller for now.
+- Beliefs are particle slices with equal weights. `pomcp` and `despot` are one-shot:
+  belief in, `Plan { action, value, status, stats }` out, with `TreeStats` counters
+  (simulations, nodes, backups, steps, depth) and `Event::TreeProgress` for an observer.
+- Between decisions: `Pomcp` keeps its tree, and `advance(action, observation)` copies the
+  subtree of `T(hao)` breadth-first into a fresh arena (root stays 0; an unexpanded child
+  is expanded), as in the paper. `Despot::advance` re-roots likewise (this crate's design;
+  the papers rebuild). DESPOT's stored numbers are relative to the root (K in the weights,
+  depth in the discount powers and the depth limit, lambda, fixed flags, the horizon end of
+  every default simulation), so re-rooting re-simulates the default policy of every kept
+  node and recomputes every bound; random streams keep absolute depths. A test checks that
+  every re-rooted leaf equals a node built fresh under the new root. The new root holds
+  only the child's scenarios.
+- `update_belief` is POMCP's rejection particle filter: non-terminal successors whose
+  observation matches are kept; reinvigoration applies a caller transform (states are
+  opaque) to fill the shortfall and add requested extras; zero accepted particles is
+  `Error::BeliefDepleted`. `pomcp_exploration` measures the paper's `c = R_hi - R_lo`;
+  `PomcpConfig::with_reward_range` gives the closed-form bound.
 - Budgets reuse `Budget` over `Stats`: `trials` counts simulations or explorations,
   `states` tree nodes, `backups` value updates. Default limits are finite (`10^4` POMCP
   simulations, `10^3` DESPOT explorations). The `Observer` is not wired into them yet.
@@ -570,8 +585,8 @@ overestimates are allowed (they only void the optimality bound). Neither panics.
    (done).
 3. CG-iLAO*; policy evaluation utilities (exact evaluation of a fixed policy by linear
    solve or iteration); discounted MDP adapter.
-4. Belief-space trait set; POMCP; DESPOT. (done, one-shot) Next: belief tracking and tree
-   reuse between decisions; decide whether this becomes `pomdp-search`.
+4. Belief-space trait set; POMCP; DESPOT; belief tracking and tree reuse between
+   decisions (done). Next: decide whether this becomes `pomdp-search`.
 
 ## Cross-crate needs
 

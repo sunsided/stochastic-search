@@ -169,6 +169,9 @@ impl<B, O> DespotConfig<B, O> {
 
 /// Plans one action from the particle belief `belief` with anytime regularized DESPOT.
 ///
+/// One [`Despot::plan`] on a fresh planner; keep a [`Despot`] to reuse its tree between
+/// decisions.
+///
 /// Samples `K` scenarios ([`DespotConfig::scenarios`]): a start state drawn from `belief`
 /// and a random stream per step, so every scenario plays out deterministically. The tree
 /// branches on actions and on the observations the scenarios produce. Each node keeps an
@@ -260,14 +263,63 @@ where
     B: Budget<TreeStats>,
     O: Observer,
 {
-    let mut search = Search::new(pomdp, belief, default, upper, config)?;
-    let status = search.run()?;
-
-    Ok(search.recommend(status))
+    Despot::new(pomdp, belief, default, upper, config)?.plan()
 }
 
-/// The state of one [`despot`] call.
-struct Search<'a, P: Pomdp, R, U, B, O> {
+/// A DESPOT planner that keeps its tree between decisions.
+///
+/// [`despot`] is one [`Despot::plan`] on a fresh planner. Keeping the planner lets
+/// [`Despot::advance`] make the belief node after the action taken and the observation
+/// received the new root. Its scenarios become the new belief (DESPOT's determinized
+/// particle filter, with fewer scenarios than `K`), and its subtree is kept: the branches,
+/// observations and rewards stay valid, since every scenario keeps its random stream.
+///
+/// Tree reuse is this crate's design; the DESPOT papers rebuild the tree from a fresh
+/// belief at every step. Re-rooting re-simulates the default policy of every kept node
+/// (the horizon moves with the root) and recomputes all bounds relative to the new root, so
+/// the kept tree equals what exploring from the new root would have built, at the cost of
+/// one default-policy simulation per kept scenario and node. With few scenarios left,
+/// starting a new planner from an updated belief (for example from
+/// [`update_belief`](crate::update_belief())) gives better estimates.
+///
+/// # Example
+///
+/// ```
+/// # use rand_core::Rng;
+/// # use stochastic_search::{Pomdp, Step, unit_interval};
+/// # struct Coin;
+/// # impl Pomdp for Coin {
+/// #     type State = bool;
+/// #     type Action = &'static str;
+/// #     type Observation = Option<bool>;
+/// #     fn actions(&self, mut emit: impl FnMut(&'static str)) { emit("peek"); emit("heads"); emit("tails"); }
+/// #     fn step<R: Rng + ?Sized>(&self, heads: &bool, action: &&'static str, rng: &mut R)
+/// #         -> Step<bool, Option<bool>> {
+/// #         if *action == "peek" {
+/// #             let truthful = unit_interval(rng) < 0.9;
+/// #             Step::new(*heads, Some(*heads == truthful), -1.0)
+/// #         } else {
+/// #             let right = *heads == (*action == "heads");
+/// #             Step::new(*heads, None, if right { 10.0 } else { -10.0 }).terminal()
+/// #         }
+/// #     }
+/// # }
+/// use stochastic_search::{Despot, DespotConfig, UniformRandom};
+///
+/// let config = DespotConfig { scenarios: 100, max_depth: 5, ..DespotConfig::default() };
+/// let mut planner = Despot::new(&Coin, &[true, false], UniformRandom, |_: &bool| 10.0, config)?;
+/// assert_eq!(planner.plan()?.action, "peek");
+///
+/// // Peeked and saw heads: the root moves to that belief node, whose scenarios are about
+/// // 90% heads, and planning continues from its subtree.
+/// assert!(planner.advance(&"peek", &Some(true))?);
+/// let heads = planner.belief().filter(|&&heads| heads).count();
+/// assert!(heads * 10 > planner.belief().len() * 8);
+/// let plan = planner.plan()?;
+/// # let _ = plan;
+/// # Ok::<(), stochastic_search::Error<bool>>(())
+/// ```
+pub struct Despot<'a, P: Pomdp, R, U, B = Limits, O = ()> {
     /// The model.
     pomdp: &'a P,
     /// The actions, in emission order.
@@ -302,9 +354,13 @@ struct Search<'a, P: Pomdp, R, U, B, O> {
     max_depth: usize,
     /// The target root gap.
     target_gap: f64,
+    /// The depth of the current root: `0` until [`Despot::advance`] moves it. Discounting,
+    /// scenario weights and the depth limit count from here; random streams use absolute
+    /// depths.
+    root_depth: usize,
 }
 
-impl<'a, P, R, U, B, O> Search<'a, P, R, U, B, O>
+impl<'a, P, R, U, B, O> Despot<'a, P, R, U, B, O>
 where
     P: Pomdp,
     P::State: Clone,
@@ -319,8 +375,10 @@ where
     ///
     /// # Errors
     ///
-    /// See [`despot`].
-    fn new(
+    /// Returns [`Error::InvalidConfig`] for an invalid configuration,
+    /// [`Error::EmptyBelief`] for an empty `belief`, [`Error::NoActions`] if the POMDP has
+    /// no actions, and the errors of [`despot`] for bad model output at the root.
+    pub fn new(
         pomdp: &'a P,
         belief: &[P::State],
         default: R,
@@ -358,10 +416,32 @@ where
             xi: config.xi,
             max_depth: config.max_depth,
             target_gap: config.target_gap,
+            root_depth: 0,
         };
 
         let particles = search.sample_scenarios(belief, config.scenarios);
         search.add_node(None, 0, particles)?;
+
+        Ok(search)
+    }
+
+    /// A planner whose root at `depth` holds exactly `scenarios`, as a re-rooted tree's
+    /// root would; for checking re-rooting against a fresh build.
+    #[cfg(test)]
+    fn with_root(
+        pomdp: &'a P,
+        scenarios: Particles<P::State>,
+        depth: usize,
+        default: R,
+        upper: U,
+        config: DespotConfig<B, O>,
+    ) -> Result<Self, Error<P::State>> {
+        let belief: Vec<P::State> = scenarios.iter().map(|(_, state)| state.clone()).collect();
+        let mut search = Self::new(pomdp, &belief, default, upper, config)?;
+        search.tree.nodes.clear();
+        search.root_depth = depth;
+        search.scenarios = count_of(&scenarios);
+        search.add_node(None, depth, scenarios)?;
 
         Ok(search)
     }
@@ -380,6 +460,133 @@ where
                 (id, belief[below(&mut rng, belief.len())].clone())
             })
             .collect()
+    }
+
+    /// Explores from the current root until its gap reaches the target or the budget runs
+    /// out, and recommends an action as [`despot`] does.
+    ///
+    /// The counters of the returned [`Plan`] count this call only, except
+    /// [`TreeStats::nodes`], the size of the whole tree; the budget sees the same counters.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::InvalidReward`] or [`Error::InvalidHeuristic`] for bad model output.
+    ///
+    /// # Panics
+    ///
+    /// Panics if more than `u32::MAX` tree nodes or branches are stored.
+    pub fn plan(&mut self) -> Result<Plan<P::Action>, Error<P::State>> {
+        self.stats = TreeStats::default();
+        let status = self.run()?;
+
+        Ok(self.recommend(status))
+    }
+
+    /// Makes the belief node after `action` and `observation` the new root, keeping its
+    /// subtree and recomputing it relative to the new root (see [`Despot`]). Returns
+    /// `false`, and keeps the tree as it is, if the root was never expanded, `action` is
+    /// not one of the POMDP's actions, or no scenario produced `observation`; then plan
+    /// again from a new planner with an updated belief.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::InvalidReward`] for bad rewards in the re-simulated default policy.
+    pub fn advance(
+        &mut self,
+        action: &P::Action,
+        observation: &P::Observation,
+    ) -> Result<bool, Error<P::State>>
+    where
+        P::Action: PartialEq,
+    {
+        let Some(child) = self.child_of_root(action, observation) else {
+            return Ok(false);
+        };
+
+        self.tree = core::mem::replace(
+            &mut self.tree,
+            Tree {
+                nodes: Vec::new(),
+                branches: Vec::new(),
+            },
+        )
+        .into_subtree(child, self.actions.len());
+        self.root_depth = self.tree.node(ROOT).depth;
+        #[expect(
+            clippy::cast_precision_loss,
+            reason = "scenario counts beyond 2^53 are far outside any memory budget"
+        )]
+        let scenarios = self.tree.node(ROOT).scenarios.len() as f64;
+        self.scenarios = scenarios;
+        self.recompute_bounds()?;
+
+        Ok(true)
+    }
+
+    /// The number of belief nodes in the tree.
+    #[must_use]
+    pub fn tree_size(&self) -> usize {
+        self.tree.nodes.len()
+    }
+
+    /// The scenarios at the root, with their states: the current belief.
+    pub fn belief(&self) -> impl ExactSizeIterator<Item = &P::State> {
+        self.tree
+            .node(ROOT)
+            .scenarios
+            .iter()
+            .map(|(_, state)| state)
+    }
+
+    /// The root's child after `action` and `observation`, if the tree has it.
+    fn child_of_root(&self, action: &P::Action, observation: &P::Observation) -> Option<u32>
+    where
+        P::Action: PartialEq,
+    {
+        let position = self.actions.iter().position(|known| known == action)?;
+        if self.tree.node(ROOT).first_branch == UNEXPANDED {
+            return None;
+        }
+
+        self.tree.branches_of(ROOT, self.actions.len())[position]
+            .children
+            .iter()
+            .find(|(seen, _)| seen == observation)
+            .map(|&(_, child)| child)
+    }
+
+    /// Re-initializes every node relative to the current root: default policy values over
+    /// the new horizon, initial bounds with the new scenario weights and discounting, no
+    /// fixed nodes; then backs up every expanded node, children first.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::InvalidReward`] for bad rewards in the re-simulated default policy.
+    fn recompute_bounds(&mut self) -> Result<(), Error<P::State>> {
+        for id in 0..self.tree.nodes.len() {
+            let id = u32::try_from(id).expect("at most u32::MAX nodes");
+            let scenarios = core::mem::take(&mut self.tree.node_mut(id).scenarios);
+            let depth = self.tree.node(id).depth;
+            let result = self.default_value(&scenarios, depth);
+            self.tree.node_mut(id).scenarios = scenarios;
+            let default_value = result?;
+            let heuristic_upper = self.tree.node(id).heuristic_upper;
+            let count = count_of(&self.tree.node(id).scenarios);
+            let initial = self.initial_bounds(depth, default_value, heuristic_upper, count);
+            let node = self.tree.node_mut(id);
+            node.default_value = default_value;
+            node.upper = initial.upper;
+            node.default_utility = initial.ell;
+            node.mu = initial.mu;
+            node.ell = initial.ell;
+            node.fixed = false;
+        }
+
+        for id in (0..self.tree.nodes.len()).rev() {
+            self.back_up(u32::try_from(id).expect("at most u32::MAX nodes"));
+        }
+
+        Ok(())
     }
 
     /// Explores and backs up until the root gap reaches the target or the budget runs out.
@@ -414,7 +621,7 @@ where
     fn explore(&mut self) -> Result<u32, Error<P::State>> {
         let mut node = ROOT;
         loop {
-            if self.tree.node(node).depth > self.max_depth {
+            if self.tree.node(node).depth - self.root_depth > self.max_depth {
                 self.tree.make_default(node);
                 return Ok(node);
             }
@@ -506,7 +713,7 @@ where
         while let Some(id) = ancestor {
             let candidate = self.tree.node(id);
             let potential = self.weight(id)
-                * self.powers[candidate.depth]
+                * self.power(candidate.depth)
                 * (candidate.upper - candidate.default_value);
             #[expect(
                 clippy::cast_precision_loss,
@@ -629,10 +836,9 @@ where
         depth: usize,
         scenarios: Vec<(u32, P::State)>,
     ) -> Result<u32, Error<P::State>> {
-        let mut default_sum = 0.0;
+        let default_value = self.default_value(&scenarios, depth)?;
         let mut upper_sum = 0.0;
-        for (scenario, state) in &scenarios {
-            default_sum += self.simulate_default(*scenario, state.clone(), depth)?;
+        for (_, state) in &scenarios {
             let bound = (self.upper)(state);
             if !bound.is_finite() {
                 return Err(Error::InvalidHeuristic {
@@ -643,29 +849,70 @@ where
             upper_sum += bound;
         }
 
-        #[expect(
-            clippy::cast_precision_loss,
-            reason = "scenario counts beyond 2^53 are far outside any memory budget"
-        )]
-        let count = scenarios.len() as f64;
-        let default_value = default_sum / count;
-        self.stats.depth = self.stats.depth.max(depth as u64);
-        let upper = (upper_sum / count).max(default_value);
-        let scale = count / self.scenarios * self.powers[depth.min(self.max_depth + 1)];
-        let default_utility = scale * default_value;
+        let heuristic_upper = upper_sum / count_of(&scenarios);
+        self.stats.depth = self.stats.depth.max((depth - self.root_depth) as u64);
+        let initial =
+            self.initial_bounds(depth, default_value, heuristic_upper, count_of(&scenarios));
 
         Ok(self.tree.push(Node {
             depth,
             parent,
             scenarios,
-            upper,
+            heuristic_upper,
+            upper: initial.upper,
             default_value,
-            default_utility,
-            mu: default_utility.max(scale * upper - self.lambda),
-            ell: default_utility,
+            default_utility: initial.ell,
+            mu: initial.mu,
+            ell: initial.ell,
             first_branch: UNEXPANDED,
             fixed: false,
         }))
+    }
+
+    /// The average default-policy return of `scenarios` from `depth`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::InvalidReward`] for a non-finite reward.
+    fn default_value(
+        &mut self,
+        scenarios: &[(u32, P::State)],
+        depth: usize,
+    ) -> Result<f64, Error<P::State>> {
+        let mut sum = 0.0;
+        for (scenario, state) in scenarios {
+            sum += self.simulate_default(*scenario, state.clone(), depth)?;
+        }
+
+        Ok(sum / count_of(scenarios))
+    }
+
+    /// The initial bounds of a node at `depth` with `count` scenarios (Ye et al. 2017,
+    /// Section 4.2.1), relative to the current root: `U` is the heuristic average raised to
+    /// the default value, `ell = l0` the scaled default value, `mu` the larger of `l0` and the
+    /// scaled `U` minus `lambda`.
+    fn initial_bounds(
+        &self,
+        depth: usize,
+        default_value: f64,
+        heuristic_upper: f64,
+        count: f64,
+    ) -> Bounds {
+        let upper = heuristic_upper.max(default_value);
+        let relative = (depth - self.root_depth).min(self.max_depth + 1);
+        let scale = count / self.scenarios * self.powers[relative];
+        let default_utility = scale * default_value;
+
+        Bounds {
+            mu: default_utility.max(scale * upper - self.lambda),
+            ell: default_utility,
+            upper,
+        }
+    }
+
+    /// `gamma^(depth - root depth)`.
+    fn power(&self, depth: usize) -> f64 {
+        self.powers[depth - self.root_depth]
     }
 
     /// Simulates the default policy along `scenario` from `state` at `depth` until the
@@ -683,7 +930,7 @@ where
     ) -> Result<f64, Error<P::State>> {
         let mut total = 0.0;
         let mut weight = 1.0;
-        for step_depth in depth..=self.max_depth {
+        for step_depth in depth..=self.root_depth + self.max_depth {
             let mut choice = self.stream(scenario, step_depth, true);
             let position = self.default.action(&state, self.actions.len(), &mut choice);
             let mut rng = self.stream(scenario, step_depth, false);
@@ -754,7 +1001,7 @@ where
             reason = "scenario counts beyond 2^53 are far outside any memory budget"
         )]
         let count = entry.scenarios.len() as f64;
-        let rho = self.powers[entry.depth] * branch.reward_sum / self.scenarios - self.lambda;
+        let rho = self.power(entry.depth) * branch.reward_sum / self.scenarios - self.lambda;
         let mut bounds = Bounds {
             mu: rho,
             ell: rho,
@@ -795,7 +1042,7 @@ where
 
     /// The recommendation (Ye et al. 2017, Algorithm 6): the root action with the best
     /// regularized lower bound, unless following the default policy is at least as good.
-    fn recommend(mut self, status: Status) -> Plan<P::Action> {
+    fn recommend(&mut self, status: Status) -> Plan<P::Action> {
         let root = self.tree.node(ROOT);
         let value = root.ell;
         let default_utility = root.default_utility;
@@ -820,7 +1067,7 @@ where
     /// The default policy's choice at the root, in the first scenario.
     fn default_action(&mut self) -> usize {
         let (scenario, state) = self.tree.node(ROOT).scenarios[0].clone();
-        let mut choice = self.stream(scenario, 0, true);
+        let mut choice = self.stream(scenario, self.root_depth, true);
 
         self.default.action(&state, self.actions.len(), &mut choice)
     }
@@ -828,6 +1075,17 @@ where
 
 /// Scenarios with their states at one node.
 type Particles<S> = Vec<(u32, S)>;
+
+/// The number of scenarios in `scenarios`, as a float.
+fn count_of<S>(scenarios: &[(u32, S)]) -> f64 {
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "scenario counts beyond 2^53 are far outside any memory budget"
+    )]
+    let count = scenarios.len() as f64;
+
+    count
+}
 
 /// The bounds of one action at one node.
 #[derive(Debug, Clone, Copy)]
@@ -856,7 +1114,7 @@ fn powers(gamma: f64, last: usize) -> Vec<f64> {
 mod tests {
     use rand_core::Rng;
 
-    use super::{DespotConfig, ROOT, Search};
+    use super::{Despot, DespotConfig, ROOT};
     use crate::pomdp::{Pomdp, Step, UniformRandom};
     use crate::rng::unit_interval;
 
@@ -903,7 +1161,7 @@ mod tests {
             ..DespotConfig::default()
         };
         // 10 bounds every return and never loosens along a step (rewards are at most 10).
-        let mut search = Search::new(
+        let mut search = Despot::new(
             &Coin,
             &[true, false],
             UniformRandom,
@@ -953,6 +1211,85 @@ mod tests {
         check_bounds(0.5, 200);
     }
 
+    /// After re-rooting, every leaf equals a node freshly built under the new root, bounds
+    /// stay ordered at every node, and planning continues from the kept subtree.
+    #[test]
+    fn rerooted_leaves_match_a_fresh_build() {
+        let config = DespotConfig {
+            scenarios: 60,
+            max_depth: 6,
+            regularization: 0.1,
+            ..DespotConfig::default()
+        };
+        let mut search = Despot::new(
+            &Coin,
+            &[true, false],
+            UniformRandom,
+            |_: &bool| 10.0,
+            config,
+        )
+        .expect("valid input");
+        search.plan().expect("valid model");
+        assert!(search.advance(&0, &Some(true)).expect("valid model"));
+        assert_eq!(search.root_depth, 1);
+        assert!(search.tree_size() > 1, "the subtree is kept");
+
+        let scenarios = search.tree.node(ROOT).scenarios.clone();
+        let mut fresh =
+            Despot::with_root(&Coin, scenarios, 1, UniformRandom, |_: &bool| 10.0, config)
+                .expect("valid input");
+        for node in &search.tree.nodes {
+            assert!(node.ell <= node.mu + 1e-12, "ell above mu");
+            if node.first_branch != super::UNEXPANDED {
+                continue;
+            }
+
+            let id = fresh
+                .add_node(None, node.depth, node.scenarios.clone())
+                .expect("valid model");
+            let built = fresh.tree.node(id);
+            assert_eq!(built.mu.to_bits(), node.mu.to_bits());
+            assert_eq!(built.ell.to_bits(), node.ell.to_bits());
+            assert_eq!(built.upper.to_bits(), node.upper.to_bits());
+            assert_eq!(built.default_value.to_bits(), node.default_value.to_bits());
+        }
+
+        let root = search.tree.node(ROOT);
+        assert!(root.parent.is_none());
+        let fresh_root = fresh.tree.node(ROOT);
+        assert_eq!(
+            fresh_root.default_value.to_bits(),
+            root.default_value.to_bits()
+        );
+        assert!(
+            root.mu <= fresh_root.mu + 1e-12,
+            "backed-up mu is at most the initial one"
+        );
+        assert_eq!(search.plan().expect("valid model").action, 1, "call heads");
+    }
+
+    /// A history the tree never saw keeps the tree and reports `false`.
+    #[test]
+    fn advance_to_an_unseen_history_fails() {
+        let mut search = Despot::new(
+            &Coin,
+            &[true, false],
+            UniformRandom,
+            |_: &bool| 10.0,
+            DespotConfig::default(),
+        )
+        .expect("valid input");
+        assert!(
+            !search.advance(&0, &Some(true)).expect("valid model"),
+            "root not expanded"
+        );
+        search.plan().expect("valid model");
+        let size = search.tree_size();
+        assert!(!search.advance(&1, &Some(true)).expect("valid model"));
+        assert!(!search.advance(&7, &None).expect("valid model"));
+        assert_eq!(search.tree_size(), size);
+    }
+
     /// The same seed builds the same tree.
     #[test]
     fn same_seed_same_tree() {
@@ -966,7 +1303,7 @@ mod tests {
                 max_trials: Some(50),
                 ..DespotConfig::DEFAULT_LIMITS
             });
-            let mut search = Search::new(
+            let mut search = Despot::new(
                 &Coin,
                 &[true, false],
                 UniformRandom,

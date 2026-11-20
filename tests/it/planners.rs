@@ -7,8 +7,8 @@
 //! first-step difference in noise.
 
 use stochastic_search::{
-    DespotConfig, Error, Event, Limits, Plan, Pomcp, PomcpConfig, Status, UniformRandom, despot,
-    observer_fn, pomcp, pomcp_exploration,
+    Despot, DespotConfig, Error, Event, Limits, Plan, Pomcp, PomcpConfig, Status, UniformRandom,
+    despot, observer_fn, pomcp, pomcp_exploration,
 };
 
 use crate::pomdps::{
@@ -530,4 +530,39 @@ fn pomcp_exploration_constants() {
         pomcp_exploration(&Tiger, &tiger_belief(1, 2), AlwaysListen, &config, 0),
         Err(Error::InvalidConfig { .. })
     ));
+}
+
+/// A kept DESPOT planner moves its root after listening and hearing the tiger on the left:
+/// the new root's scenarios are the ones that heard it there (about 85% with the tiger on
+/// the left), and it still listens with one net observation.
+#[test]
+fn despot_reuses_its_tree_between_decisions() {
+    for seed in SEEDS {
+        let mut planner = Despot::new(
+            &Tiger,
+            &tiger_belief(1, 2),
+            AlwaysListen,
+            |_: &bool| TIGER_UPPER_BOUND,
+            despot_config(seed, 2_000),
+        )
+        .expect("valid input");
+        assert_eq!(planner.plan().expect("valid").action, TigerAction::Listen);
+
+        assert!(
+            planner
+                .advance(&TigerAction::Listen, &Some(true))
+                .expect("valid")
+        );
+        let belief: Vec<bool> = planner.belief().copied().collect();
+        let left = belief.iter().filter(|&&left| left).count();
+        assert!(
+            belief.len() < 200 && left * 100 > belief.len() * 75,
+            "seed {seed}"
+        );
+        assert_eq!(
+            planner.plan().expect("valid").action,
+            TigerAction::Listen,
+            "seed {seed}"
+        );
+    }
 }
