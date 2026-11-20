@@ -2,6 +2,7 @@
 
 use crate::budget::{Budget, Limits};
 use crate::error::Error;
+use crate::observer::Observer;
 
 /// How states without a proper policy are valued.
 ///
@@ -35,8 +36,8 @@ impl DeadEnds {
 
 /// Settings shared by all algorithms.
 ///
-/// Build one with [`Config::default`] and struct update syntax, and swap the budget with
-/// [`Config::with_budget`]:
+/// Build one with [`Config::default`] and struct update syntax, swap the budget with
+/// [`Config::with_budget`] and the observer with [`Config::with_observer`]:
 ///
 /// ```
 /// use stochastic_search::{Config, DeadEnds, Stats};
@@ -50,7 +51,7 @@ impl DeadEnds {
 /// # let _ = config;
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct Config<B = Limits> {
+pub struct Config<B = Limits, O = ()> {
     /// Convergence threshold on Bellman residuals. Must be finite and greater than zero.
     ///
     /// Default `1e-6`.
@@ -71,6 +72,17 @@ pub struct Config<B = Limits> {
     /// `Config::default().with_budget(Limits { max_states: Some(n), ..Limits::DEFAULT })`;
     /// [`Limits`] documents the memory per stored state.
     pub budget: B,
+    /// Receives [`Event`](crate::Event)s during the run. Default `()`, which ignores them
+    /// at no cost.
+    pub observer: O,
+    /// Emit [`Event::Progress`](crate::Event::Progress) every this many backups. `None`
+    /// never emits it. Default `Some(1_000_000)`; ignored by the default observer.
+    pub progress_interval: Option<u64>,
+    /// The number of consecutive LRTDP trials over which
+    /// [`Event::SuspectedDivergence`](crate::Event::SuspectedDivergence) looks for steady
+    /// growth of the initial value. At least `1`. Default `16`; ignored by the default
+    /// observer.
+    pub divergence_window: usize,
 }
 
 impl Default for Config {
@@ -81,20 +93,41 @@ impl Default for Config {
             seed: 0,
             max_trial_length: 10_000,
             budget: Limits::DEFAULT,
+            observer: (),
+            progress_interval: Some(1_000_000),
+            divergence_window: 16,
         }
     }
 }
 
-impl<B> Config<B> {
+impl<B, O> Config<B, O> {
     /// Returns the same configuration with another budget.
     #[must_use]
-    pub fn with_budget<B2: Budget>(self, budget: B2) -> Config<B2> {
+    pub fn with_budget<B2: Budget>(self, budget: B2) -> Config<B2, O> {
         Config {
             epsilon: self.epsilon,
             dead_ends: self.dead_ends,
             seed: self.seed,
             max_trial_length: self.max_trial_length,
             budget,
+            observer: self.observer,
+            progress_interval: self.progress_interval,
+            divergence_window: self.divergence_window,
+        }
+    }
+
+    /// Returns the same configuration with another observer.
+    #[must_use]
+    pub fn with_observer<O2: Observer>(self, observer: O2) -> Config<B, O2> {
+        Config {
+            epsilon: self.epsilon,
+            dead_ends: self.dead_ends,
+            seed: self.seed,
+            max_trial_length: self.max_trial_length,
+            budget: self.budget,
+            observer,
+            progress_interval: self.progress_interval,
+            divergence_window: self.divergence_window,
         }
     }
 
@@ -103,7 +136,8 @@ impl<B> Config<B> {
     /// # Errors
     ///
     /// Returns [`Error::InvalidConfig`] for an epsilon that is not finite and positive, a
-    /// penalty that is not finite and non-negative, or a zero trial length.
+    /// penalty that is not finite and non-negative, a zero trial length, a zero progress
+    /// interval or a zero divergence window.
     pub(crate) fn validate<S>(&self) -> Result<(), Error<S>> {
         if !(self.epsilon.is_finite() && self.epsilon > 0.0) {
             return Err(Error::InvalidConfig {
@@ -115,6 +149,12 @@ impl<B> Config<B> {
         {
             return Err(Error::InvalidConfig {
                 reason: "the dead-end penalty must be finite and non-negative",
+            });
+        }
+
+        if self.progress_interval == Some(0) || self.divergence_window == 0 {
+            return Err(Error::InvalidConfig {
+                reason: "progress_interval and divergence_window must be at least 1",
             });
         }
 

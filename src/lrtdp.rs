@@ -9,6 +9,8 @@
 //! ```
 
 mod check_solved;
+mod divergence;
+mod monitoring;
 
 use core::hash::Hash;
 use core::mem;
@@ -18,8 +20,10 @@ use alloc::vec::Vec;
 use crate::budget::Budget;
 use crate::config::Config;
 
+use crate::lrtdp::divergence::Divergence;
 use crate::meter::{Halt, Meter, finish};
 use crate::model::{Goal, Heuristic, Mdp};
+use crate::observer::Observer;
 use crate::rng::SplitMix64;
 use crate::solution::{Solution, SolveResult};
 use crate::space::{Id, Problem, Space};
@@ -61,11 +65,19 @@ use crate::space::{Id, Problem, Space};
 /// With the default [`Limits`](crate::Limits) budget the call always returns; an exhausted
 /// budget yields [`Status::BudgetExhausted`](crate::Status::BudgetExhausted), never a
 /// verdict. Under [`DeadEnds::Infinite`](crate::DeadEnds::Infinite), a trap (a cycle that
-/// never reaches a goal) shows up as cut-off trials; LRTDP then proves by graph analysis
-/// which stored states have no proper policy and makes them dead ends, so avoidable traps
-/// are avoided and an unavoidable one yields [`Status::Unsolvable`](crate::Status::Unsolvable).
+/// never reaches a goal) shows up as cut-off trials or as values that solved checks keep
+/// raising. LRTDP proves by graph analysis, after every cut-off trial and whenever the
+/// backup count has doubled since the last analysis, which stored states have no proper
+/// policy and makes them dead ends, so avoidable traps are avoided and an unavoidable one
+/// yields [`Status::Unsolvable`](crate::Status::Unsolvable).
 /// With [`Limits::unlimited`](crate::Limits::unlimited), a run on an infinite state space, or
 /// one whose MDP violates the SSP assumptions (zero-cost cycles), may not return.
+///
+/// # Events
+///
+/// [`Config::observer`] receives [`Event`](crate::Event)s: progress, finished dead-end
+/// analyses and suspected divergence. They are informational; the status only reports
+/// proven facts. The default observer `()` costs nothing.
 ///
 /// Only the states the run touched are stored. One seed gives identical results on every
 /// run.
@@ -126,12 +138,12 @@ use crate::space::{Id, Problem, Space};
 /// assert_eq!(solution.initial_action(), Some(&"flip"));
 /// # Ok::<(), stochastic_search::Error<&str>>(())
 /// ```
-pub fn lrtdp<M, G, H, B>(
+pub fn lrtdp<M, G, H, B, O>(
     mdp: &M,
     initial: M::State,
     goal: &G,
     heuristic: H,
-    config: Config<B>,
+    config: Config<B, O>,
 ) -> SolveResult<M>
 where
     M: Mdp,
@@ -139,6 +151,7 @@ where
     G: Goal<M::State>,
     H: Heuristic<M::State, f64>,
     B: Budget,
+    O: Observer,
 {
     config.validate()?;
     let mut problem = Problem {
@@ -152,11 +165,14 @@ where
     let start = space.intern(&mut problem, initial)?;
     let mut run = Run {
         problem,
-        space,
         epsilon: config.epsilon,
         max_trial_length: config.max_trial_length,
-        meter: Meter::new(config.budget),
         rng: SplitMix64::new(config.seed),
+        divergence: Divergence::new(config.divergence_window, space.node(start).value),
+        space,
+        meter: Meter::new(config),
+        start,
+        start_residual: f64::INFINITY,
         epoch: 0,
         analyzed_at: 0,
         trail: Vec::new(),
@@ -164,14 +180,14 @@ where
         closed: Vec::new(),
     };
 
-    let status = finish(run.solve(start))?;
+    let status = finish(run.solve())?;
     run.meter.sync(&run.space);
 
     Ok(Solution::new(run.space, start, status, run.meter.stats))
 }
 
 /// The state of one LRTDP run.
-struct Run<'a, M: Mdp, G, H, B> {
+struct Run<'a, M: Mdp, G, H, B, O> {
     /// The problem being solved.
     problem: Problem<'a, M, G, H>,
     /// The states touched so far, with values, labels and policy.
@@ -180,13 +196,20 @@ struct Run<'a, M: Mdp, G, H, B> {
     epsilon: f64,
     /// The step limit of one trial.
     max_trial_length: usize,
-    /// Budget and counters.
-    meter: Meter<B>,
+    /// Budget, counters and observer.
+    meter: Meter<B, O>,
+    /// The initial state.
+    start: Id,
+    /// The change of the initial state's value at its most recent backup, for progress
+    /// events.
+    start_residual: f64,
+    /// Watches the initial value for steady growth, for divergence events.
+    divergence: Divergence,
     /// The successor sampler.
     rng: SplitMix64,
     /// The epoch of the current solved check, compared against [`Node::mark`](crate::space::Node).
     epoch: u32,
-    /// The backup count at the last dead-end analysis; see [`Run::prove_dead_ends`].
+    /// The backup count at the last dead-end analysis; see [`Run::maybe_prove_dead_ends`].
     analyzed_at: u64,
     /// Reused buffer: the states of the current trial, in visiting order.
     trail: Vec<Id>,
@@ -196,24 +219,29 @@ struct Run<'a, M: Mdp, G, H, B> {
     closed: Vec<Id>,
 }
 
-impl<M, G, H, B> Run<'_, M, G, H, B>
+impl<M, G, H, B, O> Run<'_, M, G, H, B, O>
 where
     M: Mdp,
     M::State: Clone + Eq + Hash,
     G: Goal<M::State>,
     H: Heuristic<M::State, f64>,
     B: Budget,
+    O: Observer,
 {
-    /// Runs trials until `start` is solved.
+    /// Runs trials until the initial state is solved, proving dead ends and reporting
+    /// events between trials.
     ///
     /// # Errors
     ///
     /// Returns [`Halt`] when the budget runs out or the input is invalid.
-    fn solve(&mut self, start: Id) -> Result<(), Halt<M::State>> {
+    fn solve(&mut self) -> Result<(), Halt<M::State>> {
+        let start = self.start;
         while !self.space.node(start).solved {
             self.meter.check(&self.space)?;
             self.meter.stats.trials += 1;
             self.trial(start)?;
+            self.maybe_prove_dead_ends(false);
+            self.track_divergence();
         }
 
         Ok(())
@@ -230,7 +258,7 @@ where
 
         let result = self.walk(start, &mut trail).and_then(|cut_off| {
             if cut_off {
-                self.prove_dead_ends();
+                self.maybe_prove_dead_ends(true);
             }
 
             self.unwind(&mut trail)
@@ -238,24 +266,6 @@ where
         self.trail = trail;
 
         result
-    }
-
-    /// After a cut-off trial under infinite dead-end cost, proves by graph analysis which
-    /// stored states cannot reach a goal with probability 1 and turns them into dead ends.
-    ///
-    /// Cut-off trials are the symptom of a trap cycle, whose values would otherwise rise
-    /// forever. The analysis is linear in the stored graph per round, so it only runs once at
-    /// least that many backups happened since the previous one; its cost stays proportional
-    /// to the search effort.
-    fn prove_dead_ends(&mut self) {
-        let work = (self.space.len() + self.space.outcome_count()) as u64;
-        let backups = self.meter.stats.backups;
-        if self.problem.cap.is_finite() || backups - self.analyzed_at < work {
-            return;
-        }
-
-        self.analyzed_at = backups;
-        self.space.mark_dead_ends();
     }
 
     /// Walks greedily from `start` until a solved state, a state without a finite action,
@@ -309,7 +319,12 @@ where
     fn backup(&mut self, state: Id) -> Result<(), Halt<M::State>> {
         self.space.expand(&mut self.problem, state)?;
         self.meter.charge_backup(&self.space)?;
-        self.space.update(state);
+        let residual = self.space.update(state);
+        if state == self.start {
+            self.start_residual = residual;
+        }
+
+        self.report_progress();
 
         Ok(())
     }

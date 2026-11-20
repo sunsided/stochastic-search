@@ -8,6 +8,7 @@ use crate::config::Config;
 
 use crate::meter::{Halt, Meter, finish};
 use crate::model::{Goal, Mdp, Zero};
+use crate::observer::{Event, Observer};
 use crate::solution::{Solution, SolveResult};
 use crate::space::{Id, Kind, Problem, Space};
 
@@ -63,17 +64,18 @@ use crate::space::{Id, Kind, Problem, Space};
 /// assert!((solution.initial_value() - 4.0).abs() < 1e-9);
 /// # Ok::<(), stochastic_search::Error<u8>>(())
 /// ```
-pub fn value_iteration<M, G, B>(
+pub fn value_iteration<M, G, B, O>(
     mdp: &M,
     initial: M::State,
     goal: &G,
-    config: Config<B>,
+    config: Config<B, O>,
 ) -> SolveResult<M>
 where
     M: Mdp,
     M::State: Clone + Eq + Hash,
     G: Goal<M::State>,
     B: Budget,
+    O: Observer,
 {
     config.validate()?;
     let mut problem = Problem {
@@ -85,8 +87,9 @@ where
 
     let mut space = Space::new(problem.cap);
     let start = space.intern(&mut problem, initial)?;
-    let mut meter = Meter::new(config.budget);
-    let status = finish(solve(&mut space, &mut problem, &mut meter, config.epsilon))?;
+    let epsilon = config.epsilon;
+    let mut meter = Meter::new(config);
+    let status = finish(solve(&mut space, &mut problem, &mut meter, start, epsilon))?;
     meter.sync(&space);
 
     Ok(Solution::new(space, start, status, meter.stats))
@@ -97,10 +100,11 @@ where
 /// # Errors
 ///
 /// Returns [`Halt`] when the budget runs out or the input is invalid.
-fn solve<M, G, B>(
+fn solve<M, G, B, O>(
     space: &mut Space<M::State, M::Action>,
     problem: &mut Problem<'_, M, G, Zero>,
-    meter: &mut Meter<B>,
+    meter: &mut Meter<B, O>,
+    start: Id,
     epsilon: f64,
 ) -> Result<(), Halt<M::State>>
 where
@@ -108,13 +112,15 @@ where
     M::State: Clone + Eq + Hash,
     G: Goal<M::State>,
     B: Budget,
+    O: Observer,
 {
     explore(space, problem, meter)?;
     if problem.cap.is_infinite() {
-        space.mark_dead_ends();
+        let count = space.mark_dead_ends() as u64;
+        meter.emit(Event::DeadEndsProven { count });
     }
 
-    sweep_until_converged(space, meter, epsilon)
+    sweep_until_converged(space, meter, start, epsilon)
 }
 
 /// Expands every state reachable from the interned states, in discovery order, asking the
@@ -123,16 +129,17 @@ where
 /// # Errors
 ///
 /// Returns [`Halt`] when the budget runs out or the input is invalid.
-fn explore<M, G, B>(
+fn explore<M, G, B, O>(
     space: &mut Space<M::State, M::Action>,
     problem: &mut Problem<'_, M, G, Zero>,
-    meter: &mut Meter<B>,
+    meter: &mut Meter<B, O>,
 ) -> Result<(), Halt<M::State>>
 where
     M: Mdp,
     M::State: Clone + Eq + Hash,
     G: Goal<M::State>,
     B: Budget,
+    O: Observer,
 {
     let mut next = 0;
     while next < space.len() {
@@ -150,9 +157,10 @@ where
 /// # Errors
 ///
 /// Returns [`Halt::Budget`] when the budget runs out.
-fn sweep_until_converged<S, A, B: Budget>(
+fn sweep_until_converged<S, A, B: Budget, O: Observer>(
     space: &mut Space<S, A>,
-    meter: &mut Meter<B>,
+    meter: &mut Meter<B, O>,
+    start: Id,
     epsilon: f64,
 ) -> Result<(), Halt<S>> {
     loop {
@@ -165,6 +173,9 @@ fn sweep_until_converged<S, A, B: Budget>(
 
             meter.charge_backup(space)?;
             largest = largest.max(space.update(id));
+            if meter.progress_due() {
+                meter.emit_progress(space, space.node(start).value, largest);
+            }
         }
 
         meter.stats.sweeps += 1;

@@ -1,7 +1,9 @@
 //! Budget accounting shared by the algorithms ([`Meter`], [`Halt`]).
 
 use crate::budget::{Budget, Stats};
+use crate::config::Config;
 use crate::error::Error;
+use crate::observer::{Event, Observer};
 use crate::solution::Status;
 use crate::space::Space;
 
@@ -32,21 +34,64 @@ pub(crate) fn finish<S>(outcome: Result<(), Halt<S>>) -> Result<Status, Error<S>
     }
 }
 
-/// Counts a run's work and asks the budget before each unit of it.
-pub(crate) struct Meter<B> {
+/// Counts a run's work, asks the budget before each unit of it, and reports events.
+pub(crate) struct Meter<B, O> {
     /// The caller's budget.
     budget: B,
+    /// The caller's observer.
+    observer: O,
+    /// Backups between progress events; `None` for none.
+    progress_interval: Option<u64>,
+    /// The backup count at which the next progress event is due.
+    next_progress: u64,
     /// The counters so far.
     pub(crate) stats: Stats,
 }
 
-impl<B: Budget> Meter<B> {
-    /// Starts counting from zero.
-    pub(crate) fn new(budget: B) -> Self {
+impl<B: Budget, O: Observer> Meter<B, O> {
+    /// Starts counting from zero with the budget, observer and progress interval of
+    /// `config`.
+    pub(crate) fn new(config: Config<B, O>) -> Self {
+        let progress_interval = config.progress_interval;
+
         Self {
-            budget,
+            budget: config.budget,
+            observer: config.observer,
+            progress_interval,
+            next_progress: progress_interval.unwrap_or(u64::MAX),
             stats: Stats::default(),
         }
+    }
+
+    /// Sends `event` to the observer. Compiles to nothing for a disabled observer.
+    pub(crate) fn emit(&mut self, event: Event) {
+        if O::ENABLED {
+            self.observer.observe(event);
+        }
+    }
+
+    /// Returns `true` if a progress event is due. Always `false` for a disabled observer.
+    pub(crate) fn progress_due(&self) -> bool {
+        O::ENABLED && self.stats.backups >= self.next_progress
+    }
+
+    /// Emits a progress event with the current counters and schedules the next one.
+    pub(crate) fn emit_progress<S, A>(
+        &mut self,
+        space: &Space<S, A>,
+        initial_value: f64,
+        residual: f64,
+    ) {
+        self.sync(space);
+        self.next_progress = self.progress_interval.map_or(u64::MAX, |interval| {
+            self.stats.backups.saturating_add(interval)
+        });
+        self.emit(Event::Progress {
+            backups: self.stats.backups,
+            states: self.stats.states,
+            initial_value,
+            residual,
+        });
     }
 
     /// Copies the state counts of `space` into the stats.

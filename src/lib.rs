@@ -26,6 +26,12 @@
 //! [`DeadEnds`]: at infinity (the default, exact SSP semantics), or at a finite give-up
 //! penalty that makes every input solvable.
 //!
+//! ## Events
+//!
+//! An [`Observer`] set with [`Config::with_observer`] receives [`Event`]s while a run
+//! progresses: progress, proven dead ends, and suspected divergence (a heuristic signal,
+//! never a verdict). The default observer `()` costs nothing.
+//!
 //! ## Example
 //!
 //! ```
@@ -88,6 +94,7 @@ mod error;
 mod lrtdp;
 mod meter;
 mod model;
+mod observer;
 mod rng;
 mod solution;
 mod space;
@@ -98,5 +105,6 @@ pub use config::{Config, DeadEnds};
 pub use error::{Error, PROBABILITY_TOLERANCE};
 pub use lrtdp::lrtdp;
 pub use model::{Goal, Heuristic, HeuristicFn, Mdp, Zero, heuristic_fn};
+pub use observer::{Event, Observer, ObserverFn, observer_fn};
 pub use solution::{Solution, SolveResult, Status};
 pub use value_iteration::value_iteration;

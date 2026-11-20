@@ -10,16 +10,18 @@ use crate::budget::Budget;
 use crate::lrtdp::Run;
 use crate::meter::Halt;
 use crate::model::{Goal, Heuristic, Mdp};
+use crate::observer::Observer;
 use crate::space::Id;
 use crate::space::backup::residual;
 
-impl<M, G, H, B> Run<'_, M, G, H, B>
+impl<M, G, H, B, O> Run<'_, M, G, H, B, O>
 where
     M: Mdp,
     M::State: Clone + Eq + Hash,
     G: Goal<M::State>,
     H: Heuristic<M::State, f64>,
     B: Budget,
+    O: Observer,
 {
     /// Labels `start` and its greedy envelope solved if every unsolved state in it has a
     /// residual of at most epsilon; otherwise backs up the visited states in reverse order.
@@ -99,8 +101,10 @@ where
         let backup = self.space.bellman(state);
         let node = self.space.node_mut(state);
         node.policy = backup.policy;
+        let residual = residual(node.value, backup.value);
+        self.report_progress();
 
-        Ok(residual(node.value, backup.value))
+        Ok(residual)
     }
 
     /// Pushes the successors of `state`'s greedy action that are neither solved nor visited
