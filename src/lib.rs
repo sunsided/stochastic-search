@@ -1,29 +1,100 @@
 //! # Stochastic search
 //!
-//! Planning under probabilistic outcomes: LAO*, iLAO*, RTDP, LRTDP, POMCP and DESPOT.
+//! Planning under probabilistic outcomes: value iteration and labeled RTDP today; LAO*,
+//! iLAO*, CG-iLAO*, POMCP and DESPOT planned.
+//!
+//! A problem is a stochastic shortest path (SSP) problem: reach a goal state with minimal
+//! expected total cost, where every action has a cost and a probability distribution over
+//! successor states. It is described by small capability traits instead of one universal
+//! problem trait: the MDP implements [`Mdp`], the goal test is a [`Goal`] and the initial
+//! value estimate a [`Heuristic`]. Both are implemented for closures. Every algorithm takes
+//! a [`Config`] and returns a [`Solution`]: a value function and a greedy policy, plus a
+//! [`Status`] and [`Stats`].
+//!
+//! The crate is `no_std` and needs only `alloc`.
+//!
+//! ## Algorithms
+//!
+//! - [`lrtdp`]: labeled real-time dynamic programming (Bonet and Geffner 2003). Explores only
+//!   the states a good policy visits; epsilon-consistent on them when it converges.
+//! - [`value_iteration`]: value iteration over every reachable state. The exact reference.
+//!
+//! ## Dead ends
+//!
+//! States from which no policy reaches a goal with probability 1 are valued per
+//! [`DeadEnds`]: at infinity (the default, exact SSP semantics), or at a finite give-up
+//! penalty that makes every input solvable.
+//!
+//! ## Example
+//!
+//! ```
+//! use stochastic_search::{Config, Mdp, lrtdp};
+//!
+//! /// A die roll: action `roll` (cost 1) ends on a six; action `pay` (cost 4) ends always.
+//! struct Dice;
+//!
+//! impl Mdp for Dice {
+//!     type State = bool;
+//!     type Action = &'static str;
+//!
+//!     fn actions(&self, _done: &bool, mut emit: impl FnMut(&'static str, f64)) {
+//!         emit("roll", 1.0);
+//!         emit("pay", 4.0);
+//!     }
+//!
+//!     fn outcomes(&self, _done: &bool, action: &&'static str, mut emit: impl FnMut(bool, f64)) {
+//!         match *action {
+//!             "roll" => {
+//!                 emit(true, 1.0 / 6.0);
+//!                 emit(false, 5.0 / 6.0);
+//!             }
+//!             _ => emit(true, 1.0),
+//!         }
+//!     }
+//! }
+//!
+//! let solution = lrtdp(&Dice, false, &|done: &bool| *done, &|_: &bool| Some(1.0), Config::default())?;
+//!
+//! // Rolling takes 6 attempts in expectation, so paying 4 is cheaper.
+//! assert_eq!(solution.initial_action(), Some(&"pay"));
+//! assert!((solution.initial_value() - 4.0).abs() < 1e-5);
+//! # Ok::<(), stochastic_search::Error<bool>>(())
+//! ```
 //!
 //! ## Planned scope
 //!
+//! - Real-time dynamic programming: RTDP
 //! - AND/OR heuristic search: LAO*, iLAO*, CG-iLAO*
-//! - Real-time dynamic programming: RTDP, LRTDP
 //! - Belief space: POMCP, DESPOT
+//!
+//! See `docs/design.md` in the repository for the design and milestones.
 //!
 //! ## Status
 //!
-//! Pre-release. Version 0.0.0 reserves the name; the API is not started yet and will change.
+//! Pre-release. The API will change.
 //!
 //! Repository: <https://github.com/sunsided/stochastic-search>
 
 #![no_std]
+#![forbid(unsafe_code)]
 
-/// A finite Markov decision process.
-pub trait Mdp {
-    /// A state.
-    type State;
-    /// An action.
-    type Action;
+extern crate alloc;
 
-    /// Calls `emit` with every successor of applying `action` in `state`
-    /// and its probability. The probabilities sum to 1.
-    fn outcomes(&self, state: &Self::State, action: &Self::Action, emit: impl FnMut(Self::State, f64));
-}
+mod budget;
+mod config;
+mod error;
+mod lrtdp;
+mod meter;
+mod model;
+mod rng;
+mod solution;
+mod space;
+mod value_iteration;
+
+pub use budget::{Budget, Limits, Stats};
+pub use config::{Config, DeadEnds};
+pub use error::{Error, PROBABILITY_TOLERANCE};
+pub use lrtdp::lrtdp;
+pub use model::{Goal, Heuristic, Mdp, Zero};
+pub use solution::{Solution, SolveResult, Status};
+pub use value_iteration::value_iteration;

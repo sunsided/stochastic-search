@@ -12,6 +12,11 @@ keywords = ["mdp", "planning", "pomdp", "rtdp", "search"]
 categories = ["algorithms", "science", "no-std"]
 
 [dependencies]
+# Hash table for state interning under no_std; see docs/design.md.
+hashbrown = { version = "0.16", default-features = false, features = ["default-hasher"] }
+
+[dev-dependencies]
+proptest = "1.12"
 
 [lints.rust]
 missing_docs = "warn"
