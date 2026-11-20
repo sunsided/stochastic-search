@@ -46,9 +46,12 @@ pub struct Solution<S, A> {
 impl<S, A> Solution<S, A> {
     /// Wraps the state space of a finished run.
     ///
-    /// A converged run whose initial value is infinite becomes [`Status::Unsolvable`].
+    /// A run whose initial value is infinite becomes [`Status::Unsolvable`], even if the
+    /// budget ran out: infinity only enters values through proven dead ends (states without
+    /// actions, heuristic dead ends, the dead-end proof) and spreads only through backups,
+    /// where it means every action risks a proven dead end.
     pub(crate) fn new(space: Space<S, A>, initial: Id, status: Status, counters: Stats) -> Self {
-        let status = if status == Status::Converged && space.node(initial).value.is_infinite() {
+        let status = if space.node(initial).value.is_infinite() {
             Status::Unsolvable
         } else {
             status
@@ -88,7 +91,8 @@ impl<S, A> Solution<S, A> {
 
     /// The value of the initial state: the expected cost to reach a goal.
     ///
-    /// Infinite exactly when the status is [`Status::Unsolvable`].
+    /// Infinite exactly when the status is [`Status::Unsolvable`] (which relies on the
+    /// heuristic returning `None` only for real dead ends).
     #[must_use]
     pub fn initial_value(&self) -> f64 {
         self.space.node(self.initial).value

@@ -185,7 +185,8 @@ The guarantee, stated precisely:
   `V(s0) <= V*(s0)`, and if every action costs at least `c_min > epsilon`, then
   `V*(s0) - V(s0) <= epsilon * V(s0) / (c_min - epsilon)`. This follows from
   `V_pi(s) - V(s) <= epsilon * E_pi[steps from s]` and `E_pi[steps] <= V_pi / c_min`; the
-  same condition makes `pi` reach a goal with probability 1 (a goal-free closed cycle
+  same condition makes `pi` reach a goal (or, under a penalty, a give-up state) with
+  probability 1; under a penalty, `c_min` also bounds the penalty (a goal-free closed cycle
   cannot be epsilon-consistent when costs exceed epsilon). For a tolerance `t` on
   `|V(s0) - V*(s0)|`, pick `epsilon <= t * c_min / (V + t)` for an upper estimate `V` of
   `V*(s0)`. The tests assert both the bound and a tolerance picked this way.
@@ -251,8 +252,9 @@ left out have no proper policy and become dead ends valued at infinity.
 On a partially expanded space (LRTDP), unexpanded states count as targets. That makes the
 analysis optimistic and therefore sound: a state is only marked if it cannot reach a goal
 whatever the unexpanded part looks like. On a fully expanded space (value iteration) it is
-exact. Marking cannot invalidate a solved label: a solved, epsilon-consistent envelope
-with costs above epsilon contains no goal-free closed cycle.
+exact. Solved states are never marked, so frozen policies stay untouched even when the
+cost assumptions fail (with costs above epsilon a solved envelope contains no goal-free
+closed cycle anyway).
 
 ### Termination
 

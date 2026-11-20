@@ -46,9 +46,10 @@ use crate::space::{Id, Problem, Space};
 /// - `|V(s) - min_a Q(s, a)| <= epsilon` (the full Bellman residual) if the heuristic is
 ///   consistent, so that backups never lower a value.
 /// - If the heuristic is admissible: `V(initial) <= V*(initial)`.
-/// - If, in addition, every action costs at least `c_min > epsilon`:
+/// - If, in addition, every action costs at least `c_min > epsilon` (under
+///   [`DeadEnds::Penalty`](crate::DeadEnds::Penalty), `c_min` also bounds the penalty):
 ///   `V*(initial) - V(initial) <= epsilon * V(initial) / (c_min - epsilon)`, and `pi`
-///   reaches a goal with probability 1.
+///   reaches a goal, or a state where it gives up, with probability 1.
 ///
 /// Epsilon-consistency alone is not `|V(initial) - V*(initial)| <= epsilon`; to get a
 /// tolerance `t`, pick `epsilon <= t * c_min / (V + t)` for an upper estimate `V` of the

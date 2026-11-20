@@ -7,8 +7,10 @@ use alloc::vec::Vec;
 use crate::space::{Id, Kind, Space};
 
 impl<S, A> Space<S, A> {
-    /// Turns every expanded state that provably has no proper policy into a dead end valued
-    /// at infinity, labeled solved and without a policy action. Returns how many changed.
+    /// Turns every expanded, unsolved state that provably has no proper policy into a dead
+    /// end valued at infinity, labeled solved and without a policy action. Returns how many
+    /// changed. Solved states are left alone, so a frozen policy is never rewritten; marking
+    /// is optional for soundness, only needed for termination.
     ///
     /// Sound on a partially expanded space: unexpanded states count as able to reach a goal,
     /// so only states that cannot reach a goal whatever the unexpanded part looks like are
@@ -19,7 +21,7 @@ impl<S, A> Space<S, A> {
         let mut marked = 0;
         for (index, &has_proper_policy) in proper.iter().enumerate() {
             let node = self.node_mut(id(index));
-            if !has_proper_policy && node.kind == Kind::Open && node.expanded {
+            if !has_proper_policy && node.kind == Kind::Open && node.expanded && !node.solved {
                 node.kind = Kind::DeadEnd;
                 node.value = f64::INFINITY;
                 node.solved = true;

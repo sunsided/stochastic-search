@@ -18,7 +18,8 @@ pub struct Stats {
 
 /// Decides when a run must stop before it converges.
 ///
-/// Asked before every Bellman backup and every trial, with the counters so far, so a run
+/// Asked before every Bellman backup, every LRTDP trial and every state expansion of value
+/// iteration's enumeration, with the counters so far, so a run
 /// stopped by [`Limits::max_backups`] `= n` has performed exactly `n` backups. Implemented for
 /// [`Limits`] and for every `FnMut(&Stats) -> bool`, which lets callers with a clock (this
 /// crate is `no_std`) add a time limit.
