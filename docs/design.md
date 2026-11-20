@@ -259,7 +259,8 @@ closed cycle anyway).
 ### Termination
 
 The default `Config` always returns: its budget, `Limits::DEFAULT`, allows `10^8` backups
-and `10^7` stored states. An exhausted budget gives `Status::BudgetExhausted`, never a
+and `10^6` stored states (about 250 MB for typical states: roughly `38 + size_of::<S>()`
+bytes per state, `16 + size_of::<A>()` per action, `16` per outcome). An exhausted budget gives `Status::BudgetExhausted`, never a
 verdict. `Limits::unlimited()` removes the limits. Without limits, a run returns on every
 finite SSP with positive costs whose traps the dead-end proof finds; it may not return on
 an infinite state space or with zero-cost cycles.

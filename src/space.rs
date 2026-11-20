@@ -287,3 +287,15 @@ where
 fn is_invalid_estimate(h: f64) -> bool {
     h.is_nan() || (h.is_infinite() && h < 0.0)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{Node, Outcome};
+
+    /// Keeps the memory figures in the [`Limits`](crate::Limits) docs honest.
+    #[test]
+    fn per_state_sizes_match_the_docs() {
+        assert_eq!(size_of::<Node>(), 32);
+        assert_eq!(size_of::<Outcome>(), 16);
+    }
+}

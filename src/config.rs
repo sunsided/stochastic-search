@@ -65,8 +65,11 @@ pub struct Config<B = Limits> {
     ///
     /// Guards against trials that circle a dead-end trap forever. Default `10_000`.
     pub max_trial_length: usize,
-    /// Stops a run early. Default [`Limits::DEFAULT`], which is finite, so a run with the
-    /// default configuration always returns.
+    /// Stops a run early. Default [`Limits::DEFAULT`] (`10^8` backups, `10^6` stored states,
+    /// about 250 MB for typical states), which is finite, so a run with the default
+    /// configuration always returns. Raise a cap with
+    /// `Config::default().with_budget(Limits { max_states: Some(n), ..Limits::DEFAULT })`;
+    /// [`Limits`] documents the memory per stored state.
     pub budget: B,
 }
 
