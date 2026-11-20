@@ -233,9 +233,11 @@ Additions to the paper's pseudocode:
   `checkSolved` as usual. Aborting is sound because only `checkSolved` labels, and the
   values backed up along the way steer later trials elsewhere. This keeps a trap cycle
   under `DeadEnds::Infinite` from hanging a trial;
-- after a cut-off trial under `DeadEnds::Infinite`, the dead-end proof below runs on the
-  stored graph, at most once per `|S| + |outcomes|` backups so its cost stays
-  proportional to the search effort;
+- under `DeadEnds::Infinite`, the dead-end proof below runs on the stored graph after a
+  cut-off trial and whenever the backup count has doubled since the last analysis (which
+  catches traps that trials rarely enter but solved checks keep backing up), in both
+  cases at most once per `|S| + |outcomes|` backups, so its cost stays proportional to
+  the search effort;
 - a `Budget` checked before every backup and trial stops the run; the result then reports
   `Status::BudgetExhausted` and carries the values so far;
 - states with no finite-valued action stop a trial (they are dead ends and get labeled by
@@ -260,8 +262,8 @@ closed cycle anyway).
 
 The default `Config` always returns: its budget, `Limits::DEFAULT`, allows `10^8` backups
 and `10^6` stored states (about 250 MB for typical states: roughly `38 + size_of::<S>()`
-bytes per state, `16 + size_of::<A>()` per action, `16` per outcome). An exhausted budget gives `Status::BudgetExhausted`, never a
-verdict. `Limits::unlimited()` removes the limits. Without limits, a run returns on every
+bytes per state, `16 + size_of::<A>()` per action, `16` per outcome). An exhausted budget gives
+`Status::BudgetExhausted`, never a verdict. `Limits::unlimited()` removes the limits. Without limits, a run returns on every
 finite SSP with positive costs whose traps the dead-end proof finds; it may not return on
 an infinite state space or with zero-cost cycles.
 
@@ -269,7 +271,30 @@ A distinct "diverged" status was considered: a value exceeding a provable upper 
 would show divergence. Under a penalty the bound is the penalty itself and values are
 capped, so nothing diverges; under infinite cost no finite bound is known in general. The
 dead-end proof replaces it with a stronger answer: `Status::Unsolvable` when the initial
-state has no proper policy.
+state has no proper policy. Suspected divergence is reported as an event instead (next
+section), never as a status.
+
+### Events
+
+An `Observer` (passed as `Config::observer`, swapped with `Config::with_observer`)
+receives `Event`s. The trait has one method with a no-op default and an associated
+`ENABLED` constant; `()` is the default observer with `ENABLED = false`, so every event
+computation sits behind a compile-time constant and vanishes. Closures work through
+`observer_fn`, as heuristics do through `heuristic_fn`. Events never change values,
+policies or the status.
+
+- `Progress { backups, states, initial_value, residual }` every `Config::progress_interval`
+  backups (default `10^6`). `residual` is the initial state's last value change (LRTDP) or
+  the largest residual so far in the current sweep (value iteration).
+- `DeadEndsProven { count }` after every dead-end analysis, `count` newly proven states.
+- `SuspectedDivergence { value, growth, backups }`, LRTDP only. After each trial the
+  initial value is checked. If it rose in each of the last `Config::divergence_window`
+  trials (default 16) and the last rise is at least half the first rise of that window,
+  the event fires with the growth over the window, and the window starts over; a trial
+  without a rise resets it. Converging runs usually rise by shrinking amounts, a trap by a
+  steady amount. It is a heuristic: a solvable problem whose values climb slowly and
+  steadily to a large optimum (a retry loop with success probability 0.001, tested)
+  triggers it too, and a divergent run whose growth fluctuates may not.
 
 ### Seeded deterministic sampling
 
@@ -348,8 +373,12 @@ overestimates are allowed (they only void the optimality bound). Neither panics.
   a budget; no panic, no hang, NaN reported as an error; the frozen-policy residual holds
   for any heuristic.
 - Termination: unavoidable trap cycles end as `Unsolvable` with the default configuration
-  (both algorithms); infinite state spaces stop at the state limit, for value iteration's
-  enumeration too.
+  (both algorithms), including a trap entered with probability `1e-9`; infinite state
+  spaces stop at the state limit, for value iteration's enumeration too.
+- Events: an unsolvable ring reports suspected divergence before its budget runs out; a
+  slow solvable retry loop may report it but converges, with or without an observer to the
+  same bits; progress follows its interval; the default observer is zero-sized and
+  disabled at compile time.
 - Proptest case counts are fixed in code (64), so `cargo test` stays fast.
 
 ## Milestones
