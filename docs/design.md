@@ -484,7 +484,10 @@ pub trait RolloutPolicy<S> { fn action<R: Rng + ?Sized>(&mut self, state: &S,
   every default simulation), so re-rooting re-simulates the default policy of every kept
   node and recomputes every bound; random streams keep absolute depths. A test checks that
   every re-rooted leaf equals a node built fresh under the new root. The new root holds
-  only the child's scenarios.
+  only the child's scenarios. An unseen history is `Error::UnseenHistory`, and `plan` refuses until
+  `reset(belief)`: a DESPOT planner keeps its belief in the tree, so silently keeping the
+  old root (or resetting to it) would plan for the wrong history. `Pomcp::advance` instead
+  starts over with an empty tree, which is safe because its `plan` takes the belief.
 - `update_belief` is POMCP's rejection particle filter: non-terminal successors whose
   observation matches are kept; reinvigoration applies a caller transform (states are
   opaque) to fill the shortfall and add requested extras; zero accepted particles is

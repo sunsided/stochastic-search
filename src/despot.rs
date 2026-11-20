@@ -368,7 +368,7 @@ where
 ///
 /// // Peeked and saw heads: the root moves to that belief node, whose scenarios are about
 /// // 90% heads, and planning continues from its subtree.
-/// assert!(planner.advance(&"peek", &Some(true))?);
+/// planner.advance(&"peek", &Some(true))?;
 /// let heads = planner.belief().filter(|&&heads| heads).count();
 /// assert!(heads * 10 > planner.belief().len() * 8);
 /// let plan = planner.plan()?;
@@ -414,6 +414,11 @@ pub struct Despot<'a, P: Pomdp, R, U, B = Limits, O = ()> {
     /// scenario weights and the depth limit count from here; random streams use absolute
     /// depths.
     root_depth: usize,
+    /// `K`, the number of scenarios a fresh root samples.
+    scenario_count: usize,
+    /// Set when [`Despot::advance`] met a history the tree never saw: the tree no longer
+    /// matches the agent's belief, so [`Despot::plan`] refuses until [`Despot::reset`].
+    lost: bool,
 }
 
 impl<'a, P, R, U, B, O> Despot<'a, P, R, U, B, O>
@@ -473,6 +478,8 @@ where
             max_depth: config.max_depth,
             target_gap: config.target_gap,
             root_depth: 0,
+            scenario_count: config.scenarios,
+            lost: false,
         };
 
         let particles = search.sample_scenarios(belief, config.scenarios);
@@ -526,12 +533,18 @@ where
     ///
     /// # Errors
     ///
-    /// Returns [`Error::InvalidReward`] or [`Error::InvalidHeuristic`] for bad model output.
+    /// Returns [`Error::InvalidReward`] or [`Error::InvalidHeuristic`] for bad model output,
+    /// and [`Error::UnseenHistory`] after a failed [`Despot::advance`] until
+    /// [`Despot::reset`].
     ///
     /// # Panics
     ///
     /// Panics if more than `u32::MAX` tree nodes or branches are stored.
     pub fn plan(&mut self) -> Result<Plan<P::Action>, Error<P::State>> {
+        if self.lost {
+            return Err(Error::UnseenHistory);
+        }
+
         self.stats = TreeStats::default();
         let status = self.run()?;
 
@@ -539,24 +552,32 @@ where
     }
 
     /// Makes the belief node after `action` and `observation` the new root, keeping its
-    /// subtree and recomputing it relative to the new root (see [`Despot`]). Returns
-    /// `false`, and keeps the tree as it is, if the root was never expanded, `action` is
-    /// not one of the POMDP's actions, or no scenario produced `observation`; then plan
-    /// again from a new planner with an updated belief.
+    /// subtree and recomputing it relative to the new root (see [`Despot`]).
+    ///
+    /// If the tree has no such node (the root was never expanded, `action` is not one of
+    /// the POMDP's actions, or no scenario produced `observation`), the planner has no
+    /// belief for the agent's real history. Unlike [`Pomcp::advance`](crate::Pomcp::advance),
+    /// which can start over because its [`Pomcp::plan`](crate::Pomcp::plan) takes the belief,
+    /// a DESPOT planner holds its belief in the tree, and keeping the old root would plan
+    /// for the wrong history. So this returns [`Error::UnseenHistory`], and [`Despot::plan`]
+    /// keeps returning it until [`Despot::reset`] supplies a belief (for example from
+    /// [`update_belief`](crate::update_belief())).
     ///
     /// # Errors
     ///
-    /// Returns [`Error::InvalidReward`] for bad rewards in the re-simulated default policy.
+    /// Returns [`Error::UnseenHistory`] as described above, and [`Error::InvalidReward`] for
+    /// bad rewards in the re-simulated default policy.
     pub fn advance(
         &mut self,
         action: &P::Action,
         observation: &P::Observation,
-    ) -> Result<bool, Error<P::State>>
+    ) -> Result<(), Error<P::State>>
     where
         P::Action: PartialEq,
     {
         let Some(child) = self.child_of_root(action, observation) else {
-            return Ok(false);
+            self.lost = true;
+            return Err(Error::UnseenHistory);
         };
 
         self.tree = core::mem::replace(
@@ -576,7 +597,35 @@ where
         self.scenarios = scenarios;
         self.recompute_bounds()?;
 
-        Ok(true)
+        Ok(())
+    }
+
+    /// Drops the tree and starts over from `belief` with `K` fresh scenarios, as
+    /// [`Despot::new`] does. Clears the state left by a failed [`Despot::advance`].
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::EmptyBelief`] for an empty `belief`, and the errors of [`despot`]
+    /// for bad model output at the root.
+    pub fn reset(&mut self, belief: &[P::State]) -> Result<(), Error<P::State>> {
+        if belief.is_empty() {
+            return Err(Error::EmptyBelief);
+        }
+
+        self.tree.nodes.clear();
+        self.tree.branches.clear();
+        self.root_depth = 0;
+        #[expect(
+            clippy::cast_precision_loss,
+            reason = "scenario counts beyond 2^53 are far outside any memory budget"
+        )]
+        let scenarios = self.scenario_count as f64;
+        self.scenarios = scenarios;
+        let particles = self.sample_scenarios(belief, self.scenario_count);
+        self.add_node(None, 0, particles)?;
+        self.lost = false;
+
+        Ok(())
     }
 
     /// The number of belief nodes in the tree.
@@ -1286,7 +1335,7 @@ mod tests {
         )
         .expect("valid input");
         search.plan().expect("valid model");
-        assert!(search.advance(&0, &Some(true)).expect("valid model"));
+        search.advance(&0, &Some(true)).expect("a seen history");
         assert_eq!(search.root_depth, 1);
         assert!(search.tree_size() > 1, "the subtree is kept");
 
@@ -1351,9 +1400,11 @@ mod tests {
         assert_eq!(search.plan().expect("valid model").action, 1, "call heads");
     }
 
-    /// A history the tree never saw keeps the tree and reports `false`.
+    /// A history the tree never saw is an error, and planning refuses until a reset.
     #[test]
-    fn advance_to_an_unseen_history_fails() {
+    fn advance_to_an_unseen_history_needs_a_reset() {
+        use crate::Error;
+
         let mut search = Despot::new(
             &Coin,
             &[true, false],
@@ -1362,15 +1413,17 @@ mod tests {
             DespotConfig::default(),
         )
         .expect("valid input");
-        assert!(
-            !search.advance(&0, &Some(true)).expect("valid model"),
-            "root not expanded"
-        );
+        assert_eq!(search.advance(&0, &Some(true)), Err(Error::UnseenHistory));
+        assert_eq!(search.plan(), Err(Error::UnseenHistory));
+
+        search.reset(&[true, false]).expect("valid input");
         search.plan().expect("valid model");
-        let size = search.tree_size();
-        assert!(!search.advance(&1, &Some(true)).expect("valid model"));
-        assert!(!search.advance(&7, &None).expect("valid model"));
-        assert_eq!(search.tree_size(), size);
+        assert_eq!(search.advance(&1, &Some(true)), Err(Error::UnseenHistory));
+        assert_eq!(search.advance(&7, &None), Err(Error::UnseenHistory));
+        assert_eq!(search.reset(&[]), Err(Error::EmptyBelief));
+        search.reset(&[true]).expect("valid input");
+        assert_eq!(search.tree_size(), 1);
+        assert_eq!(search.plan().expect("valid model").action, 1, "call heads");
     }
 
     /// The same seed builds the same tree.

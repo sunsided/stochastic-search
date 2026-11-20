@@ -69,6 +69,9 @@ pub enum Error<S> {
     NoActions,
     /// A POMDP planner was given a belief without particles.
     EmptyBelief,
+    /// [`Despot::advance`](crate::Despot::advance) met an action and observation the tree
+    /// never produced; the planner needs [`Despot::reset`](crate::Despot::reset).
+    UnseenHistory,
     /// [`update_belief`](crate::update_belief()) accepted no particle: the observation is
     /// impossible under the belief, or too rare for the attempt budget.
     BeliefDepleted {
@@ -117,6 +120,9 @@ impl<S: fmt::Debug> fmt::Display for Error<S> {
             }
             Self::NoActions => f.write_str("the POMDP has no actions"),
             Self::EmptyBelief => f.write_str("the belief has no particles"),
+            Self::UnseenHistory => {
+                f.write_str("the planner's tree has no node for this action and observation")
+            }
             Self::BeliefDepleted { attempts } => write!(
                 f,
                 "no particle matched the observation in {attempts} attempts"

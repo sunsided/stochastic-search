@@ -507,11 +507,9 @@ fn despot_reuses_its_tree_between_decisions() {
         .expect("valid input");
         assert_eq!(planner.plan().expect("valid").action, TigerAction::Listen);
 
-        assert!(
-            planner
-                .advance(&TigerAction::Listen, &Some(true))
-                .expect("valid")
-        );
+        planner
+            .advance(&TigerAction::Listen, &Some(true))
+            .expect("a seen history");
         let belief: Vec<bool> = planner.belief().copied().collect();
         let left = belief.iter().filter(|&&left| left).count();
         assert!(
