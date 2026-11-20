@@ -1,7 +1,13 @@
-//! The seeded pseudo-random generator behind LRTDP's successor sampling.
+//! The seeded pseudo-random generator behind LRTDP's successor sampling and the POMDP
+//! planners' simulations.
 //!
 //! An own generator rather than a dependency, so that a seed reproduces a run across releases
-//! of this crate regardless of other crates' versions (see `docs/design.md`).
+//! of this crate regardless of other crates' versions (see `docs/design.md`). It implements
+//! `rand_core`'s generator trait, which only fixes the interface, not the sequence.
+
+use core::convert::Infallible;
+
+use rand_core::Rng;
 
 /// The `SplitMix64` generator (Steele, Lea and Flood 2014).
 ///
@@ -31,17 +37,57 @@ impl SplitMix64 {
 
     /// Returns a uniform sample from `[0, 1)` with 53 random bits.
     pub(crate) fn next_unit(&mut self) -> f64 {
-        /// `2^-53`, the spacing of the 53-bit grid on `[0, 1)`.
-        const SCALE: f64 = 1.0 / 9_007_199_254_740_992.0;
-
-        #[expect(
-            clippy::cast_precision_loss,
-            reason = "the value has at most 53 bits, which f64 represents exactly"
-        )]
-        let bits = (self.next_u64() >> 11) as f64;
-
-        bits * SCALE
+        unit_interval(self)
     }
+}
+
+impl rand_core::TryRng for SplitMix64 {
+    type Error = Infallible;
+
+    fn try_next_u32(&mut self) -> Result<u32, Infallible> {
+        Ok((self.next_u64() >> 32) as u32)
+    }
+
+    fn try_next_u64(&mut self) -> Result<u64, Infallible> {
+        Ok(self.next_u64())
+    }
+
+    fn try_fill_bytes(&mut self, dst: &mut [u8]) -> Result<(), Infallible> {
+        rand_core::utils::fill_bytes_via_next_word(dst, || self.try_next_u64())
+    }
+}
+
+/// Returns a uniform sample from `[0, 1)` with 53 random bits drawn from `rng`.
+///
+/// `rand_core` has no floating-point helpers, and a generative
+/// [`Pomdp`](crate::Pomdp) usually needs one; this is the conversion the crate uses itself.
+///
+/// # Example
+///
+/// ```
+/// use stochastic_search::unit_interval;
+///
+/// # struct Counter(u64);
+/// # impl rand_core::TryRng for Counter {
+/// #     type Error = core::convert::Infallible;
+/// #     fn try_next_u32(&mut self) -> Result<u32, Self::Error> { Ok(0) }
+/// #     fn try_next_u64(&mut self) -> Result<u64, Self::Error> { self.0 += 1 << 62; Ok(self.0) }
+/// #     fn try_fill_bytes(&mut self, _: &mut [u8]) -> Result<(), Self::Error> { Ok(()) }
+/// # }
+/// let mut rng = Counter(0);
+/// assert_eq!(unit_interval(&mut rng), 0.25);
+/// ```
+pub fn unit_interval<R: Rng + ?Sized>(rng: &mut R) -> f64 {
+    /// `2^-53`, the spacing of the 53-bit grid on `[0, 1)`.
+    const SCALE: f64 = 1.0 / 9_007_199_254_740_992.0;
+
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "the value has at most 53 bits, which f64 represents exactly"
+    )]
+    let bits = (rng.next_u64() >> 11) as f64;
+
+    bits * SCALE
 }
 
 #[cfg(test)]

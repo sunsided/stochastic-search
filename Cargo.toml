@@ -14,9 +14,18 @@ categories = ["algorithms", "science", "no-std"]
 [dependencies]
 # Hash table for state interning under no_std; see docs/design.md.
 hashbrown = { version = "0.16", default-features = false, features = ["default-hasher"] }
+# Square roots, logarithms and powers for UCB and discounting under no_std.
+libm = "0.2.16"
+# The generator trait of the POMDP generative model.
+rand_core = { version = "0.10.1", default-features = false }
 
 [dev-dependencies]
+criterion = { version = "0.8", default-features = false, features = ["cargo_bench_support"] }
 proptest = "1.12"
+
+[[bench]]
+name = "planners"
+harness = false
 
 [lints.rust]
 missing_docs = "warn"

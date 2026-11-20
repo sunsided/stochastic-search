@@ -4,6 +4,8 @@
 mod events;
 mod fixtures;
 mod oracle;
+mod planners;
+mod pomdps;
 mod properties;
 mod random;
 mod robustness;

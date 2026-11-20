@@ -36,12 +36,24 @@ pub enum Error<S> {
         /// The sum of the outcome probabilities.
         sum: f64,
     },
-    /// The heuristic estimated NaN or negative infinity.
+    /// The heuristic estimated NaN or negative infinity, or a POMDP upper bound (see
+    /// DESPOT (planned)) is NaN.
     InvalidHeuristic {
         /// The state that was estimated.
         state: S,
     },
-    /// A [`Config`](crate::Config) setting is out of range.
+    /// A [`Pomdp::step`](crate::Pomdp::step) returned a NaN or infinite reward.
+    InvalidReward {
+        /// The state the step started from.
+        state: S,
+        /// The offending reward.
+        reward: f64,
+    },
+    /// A [`Pomdp`](crate::Pomdp) emitted no actions.
+    NoActions,
+    /// A POMDP planner was given a belief without particles.
+    EmptyBelief,
+    /// A configuration setting is out of range.
     InvalidConfig {
         /// Which setting, and the valid range.
         reason: &'static str,
@@ -69,9 +81,14 @@ impl<S: fmt::Debug> fmt::Display for Error<S> {
             Self::InvalidHeuristic { state } => {
                 write!(
                     f,
-                    "the heuristic estimated NaN or negative infinity for state {state:?}"
+                    "the heuristic or bound estimated an invalid value for state {state:?}"
                 )
             }
+            Self::InvalidReward { state, reward } => {
+                write!(f, "invalid reward {reward} from state {state:?}")
+            }
+            Self::NoActions => f.write_str("the POMDP has no actions"),
+            Self::EmptyBelief => f.write_str("the belief has no particles"),
             Self::InvalidConfig { reason } => write!(f, "invalid configuration: {reason}"),
         }
     }
