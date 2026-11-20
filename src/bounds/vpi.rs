@@ -144,7 +144,9 @@ impl<B, O> From<Config<B, O>> for VpiRtdpConfig<B, O> {
 /// `U(initial) - L(initial) <= epsilon`, which pure VPI steering may never reach: a trial can
 /// keep following a successor of positive VPI (a self-loop, say) whose backups no longer
 /// change anything, while the states that hold the gap up have zero VPI. Two additions
-/// restore BRTDP's convergence, at worst halving its speed:
+/// restore BRTDP's convergence argument (at least every second trial after a stalled one
+/// is a BRTDP trial), with no speed guarantee: on random SSPs VPI-RTDP needed up to 75
+/// times BRTDP's backups:
 ///
 /// - step 3 first applies BRTDP's rule: while the expected successor gap is at least the
 ///   initial state's gap divided by `tau`, the trial samples by gap;

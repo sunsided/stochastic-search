@@ -212,7 +212,8 @@ where
         let mut trail = mem::take(&mut self.trail);
         trail.clear();
         let gap_before = self.gap(self.start);
-        if let Explorer::Frtdp(focus) = &mut self.explorer {
+        let fallback = self.fallback;
+        if let (Explorer::Frtdp(focus), false) = (&mut self.explorer, fallback) {
             focus.start_trial();
         }
 
@@ -224,7 +225,8 @@ where
             Ok(())
         });
         self.trail = trail;
-        if let Explorer::Frtdp(focus) = &mut self.explorer {
+        // A fallback trial tracks no update quality, so it must not move FRTDP's depth limit.
+        if let (Explorer::Frtdp(focus), false) = (&mut self.explorer, fallback) {
             focus.end_trial();
         }
 

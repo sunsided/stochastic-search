@@ -274,8 +274,8 @@ where
 /// particle filter, with fewer scenarios than `K`), and its subtree is kept: the branches,
 /// observations and rewards stay valid, since every scenario keeps its random stream.
 ///
-/// Tree reuse is this crate's design; the DESPOT papers rebuild the tree from a fresh
-/// belief at every step. Re-rooting re-simulates the default policy of every kept node
+/// Tree reuse is this crate's design: the DESPOT papers search from the updated belief at
+/// every step and do not discuss reusing the tree. Re-rooting re-simulates the default policy of every kept node
 /// (the horizon moves with the root) and recomputes all bounds relative to the new root, so
 /// the kept tree equals what exploring from the new root would have built, at the cost of
 /// one default-policy simulation per kept scenario and node. With few scenarios left,
@@ -1252,6 +1252,33 @@ mod tests {
             assert_eq!(built.ell.to_bits(), node.ell.to_bits());
             assert_eq!(built.upper.to_bits(), node.upper.to_bits());
             assert_eq!(built.default_value.to_bits(), node.default_value.to_bits());
+        }
+
+        // Replaying the kept expansions on a fresh tree under the new root, in id order,
+        // rebuilds the whole kept tree: same ids, structure and bounds, bit for bit.
+        let scenarios = search.tree.node(ROOT).scenarios.clone();
+        let mut replay =
+            Despot::with_root(&Coin, scenarios, 1, UniformRandom, |_: &bool| 10.0, config)
+                .expect("valid input");
+        for id in 0..search.tree.nodes.len() {
+            let id = u32::try_from(id).expect("small tree");
+            if search.tree.node(id).first_branch != super::UNEXPANDED {
+                replay.expand(id).expect("valid model");
+            }
+        }
+
+        for id in (0..replay.tree.nodes.len()).rev() {
+            replay.back_up(u32::try_from(id).expect("small tree"));
+        }
+
+        assert_eq!(replay.tree.nodes.len(), search.tree.nodes.len());
+        for (kept, built) in search.tree.nodes.iter().zip(&replay.tree.nodes) {
+            assert_eq!(kept.parent, built.parent);
+            assert_eq!(kept.first_branch, built.first_branch);
+            assert_eq!(kept.scenarios, built.scenarios);
+            assert_eq!(kept.mu.to_bits(), built.mu.to_bits());
+            assert_eq!(kept.ell.to_bits(), built.ell.to_bits());
+            assert_eq!(kept.upper.to_bits(), built.upper.to_bits());
         }
 
         let root = search.tree.node(ROOT);

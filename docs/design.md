@@ -470,7 +470,7 @@ pub trait RolloutPolicy<S> { fn action<R: Rng + ?Sized>(&mut self, state: &S,
 - Between decisions: `Pomcp` keeps its tree, and `advance(action, observation)` copies the
   subtree of `T(hao)` breadth-first into a fresh arena (root stays 0; an unexpanded child
   is expanded), as in the paper. `Despot::advance` re-roots likewise (this crate's design;
-  the papers rebuild). DESPOT's stored numbers are relative to the root (K in the weights,
+  the papers search from the updated belief at each step and do not discuss reuse). DESPOT's stored numbers are relative to the root (K in the weights,
   depth in the discount powers and the depth limit, lambda, fixed flags, the horizon end of
   every default simulation), so re-rooting re-simulates the default policy of every kept
   node and recomputes every bound; random streams keep absolute depths. A test checks that
@@ -576,8 +576,10 @@ overestimates are allowed (they only void the optimality bound). Neither panics.
   margin derived by hand in each test, over four seeds, for POMCP and DESPOT; determinism
   per seed; input validation; DESPOT's bound invariants as unit tests.
 - PBVI oracle (tests only): point-based value iteration on Tiger's explicit model over 101
-  belief points reproduces the known value (19.37 at the uniform belief); POMCP and DESPOT
-  must pick PBVI's action on four seeds wherever PBVI's Q-margin is at least 5. Values are
+  belief points (its computed value at the uniform belief is 19.37); POMCP must pick
+  PBVI's action on four seeds wherever PBVI's Q-margin is at least 5 (only listening
+  decisions reach it; at margin 3.0 POMCP fails once), DESPOT wherever it is at least 2
+  (including both door openings). Values are
   not compared (POMCP is biased, DESPOT's bounds hold for its scenarios only).
 - Proptest case counts are fixed in code (64), so `cargo test` stays fast.
 

@@ -190,66 +190,101 @@ fn pbvi_solves_tiger() {
     );
 }
 
-/// POMCP and DESPOT agree with PBVI on every belief of a sweep where PBVI's margin is at
-/// least 5, on four seeds.
-///
-/// Smaller margins are not reliable at these budgets: at 15 of 200 particles on the left,
-/// PBVI's listening beats opening the left door by 3.0 (23.18 against 20.15), but POMCP with
-/// 20 000 simulations and always-listen rollouts opens the door on seed 0, probably because its rollouts
-/// value the round after opening at `-1 / (1 - gamma) = -20` instead of the optimal 19.37,
-/// a bias the tree has not overcome at that budget (not verified further).
-#[test]
-fn tree_planners_agree_with_pbvi() {
-    let set = solve();
-    let mut checked = 0;
+/// The first action of a planner on the Tiger belief with `left` of 200 particles on the
+/// left, for `seed`.
+type Planner = fn(usize, u64) -> TigerAction;
+
+/// POMCP with 20 000 simulations and always-listen rollouts.
+fn pomcp_action(left: usize, seed: u64) -> TigerAction {
+    let config = PomcpConfig {
+        discount: DISCOUNT,
+        exploration: 110.0,
+        max_depth: 60,
+        seed,
+        ..PomcpConfig::default()
+    }
+    .with_budget(Limits {
+        max_trials: Some(20_000),
+        ..PomcpConfig::DEFAULT_LIMITS
+    });
+
+    pomcp(&Tiger, &tiger_belief(left, 200), AlwaysListen, config)
+        .expect("valid input")
+        .action
+}
+
+/// DESPOT with 200 scenarios and 2 000 explorations.
+fn despot_action(left: usize, seed: u64) -> TigerAction {
+    let config = DespotConfig {
+        discount: DISCOUNT,
+        scenarios: 200,
+        max_depth: 40,
+        seed,
+        ..DespotConfig::default()
+    }
+    .with_budget(Limits {
+        max_trials: Some(2_000),
+        ..DespotConfig::DEFAULT_LIMITS
+    });
+
+    despot(
+        &Tiger,
+        &tiger_belief(left, 200),
+        AlwaysListen,
+        |_: &bool| TIGER_UPPER_BOUND,
+        config,
+    )
+    .expect("valid input")
+    .action
+}
+
+/// Asserts that `planner` picks PBVI's action, on four seeds, at every belief of a sweep
+/// where PBVI's Q-margin is at least `margin`, and returns the actions checked.
+fn assert_agrees(set: &[Alpha], name: &str, planner: Planner, margin: f64) -> Vec<TigerAction> {
+    let mut checked = Vec::new();
     for left in [1, 15, 30, 50, 85, 97, 100, 103, 115, 150, 170, 185, 199] {
-        let fraction = f64::from(left) / 200.0;
-        let Some(expected) = clear_action(&set, fraction, 5.0) else {
+        let Some(expected) = clear_action(set, f64::from(left) / 200.0, margin) else {
             continue;
         };
 
-        checked += 1;
-        let belief = tiger_belief(usize::try_from(left).expect("small"), 200);
+        checked.push(expected);
+        let left = usize::try_from(left).expect("small");
         for seed in 0..4 {
-            let config = PomcpConfig {
-                discount: DISCOUNT,
-                exploration: 110.0,
-                max_depth: 60,
-                seed,
-                ..PomcpConfig::default()
-            }
-            .with_budget(Limits {
-                max_trials: Some(20_000),
-                ..PomcpConfig::DEFAULT_LIMITS
-            });
-            let plan = pomcp(&Tiger, &belief, AlwaysListen, config).expect("valid input");
-            assert_eq!(plan.action, expected, "POMCP, left {left}/200, seed {seed}");
-
-            let config = DespotConfig {
-                discount: DISCOUNT,
-                scenarios: 200,
-                max_depth: 40,
-                seed,
-                ..DespotConfig::default()
-            }
-            .with_budget(Limits {
-                max_trials: Some(2_000),
-                ..DespotConfig::DEFAULT_LIMITS
-            });
-            let plan = despot(
-                &Tiger,
-                &belief,
-                AlwaysListen,
-                |_: &bool| TIGER_UPPER_BOUND,
-                config,
-            )
-            .expect("valid input");
             assert_eq!(
-                plan.action, expected,
-                "DESPOT, left {left}/200, seed {seed}"
+                planner(left, seed),
+                expected,
+                "{name}, left {left}/200, seed {seed}"
             );
         }
     }
 
-    assert!(checked >= 6, "the sweep checks enough beliefs");
+    checked
+}
+
+/// POMCP agrees with PBVI wherever PBVI's margin is at least 5. Only listening reaches that
+/// margin (opening the far door at 1 or 199 of 200 particles wins by 2.4 at most), so this
+/// checks listening decisions only.
+///
+/// Smaller margins are not reliable at this budget: at 15 of 200 particles on the left,
+/// PBVI's listening beats opening the left door by 3.0 (23.18 against 20.15), but POMCP
+/// opens the door on seed 0, probably because its rollouts value the round after opening
+/// at `-1 / (1 - gamma) = -20` instead of PBVI's 19.37, a bias the tree has not overcome
+/// (not verified further).
+#[test]
+fn pomcp_agrees_with_pbvi() {
+    let set = solve();
+    let checked = assert_agrees(&set, "POMCP", pomcp_action, 5.0);
+
+    assert!(checked.len() >= 6 && checked.iter().all(|&a| a == TigerAction::Listen));
+}
+
+/// DESPOT agrees with PBVI wherever PBVI's margin is at least 2, which includes opening
+/// the far door when 1 or 199 of 200 particles are on one side.
+#[test]
+fn despot_agrees_with_pbvi() {
+    let set = solve();
+    let checked = assert_agrees(&set, "DESPOT", despot_action, 2.0);
+
+    assert!(checked.contains(&TigerAction::OpenLeft));
+    assert!(checked.contains(&TigerAction::OpenRight));
 }

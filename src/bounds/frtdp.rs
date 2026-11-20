@@ -114,7 +114,8 @@ impl<B, O> From<Config<B, O>> for FrtdpConfig<B, O> {
 /// the per-state priorities were not inspected). After an FRTDP trial that did not
 /// shrink the initial state's gap, the next trial therefore runs as a plain BRTDP trial
 /// (with `tau = 10`), which samples successors by gap with the seed of
-/// [`Config::seed`]. This at worst halves the speed of BRTDP and restores its convergence.
+/// [`Config::seed`]. So at least every second trial after a stalled one is a BRTDP
+/// trial, which restores BRTDP's convergence argument; it is no speed guarantee.
 ///
 /// # Errors
 ///
