@@ -1,7 +1,8 @@
 //! Hand-made SSPs with closed-form answers, solved by every SSP algorithm.
 
 use stochastic_search::{
-    Config, DeadEnds, Limits, Solution, Status, Zero, ilao_star, lrtdp, rtdp, value_iteration,
+    Config, DeadEnds, Limits, Solution, Status, Zero, ilao_star, lao_star, lrtdp, rtdp,
+    value_iteration,
 };
 
 use crate::table::{Table, action};
@@ -9,8 +10,9 @@ use crate::table::{Table, action};
 /// Tolerance for closed-form comparisons; LRTDP runs with a tighter epsilon.
 const TOLERANCE: f64 = 1e-6;
 
-/// Solves `table` from state 0 with value iteration, LRTDP, RTDP and iLAO* under `dead_ends`.
-fn solve_both(table: &Table, dead_ends: DeadEnds) -> [Solution<usize, usize>; 4] {
+/// Solves `table` from state 0 with value iteration, LRTDP, RTDP, iLAO* and LAO* under
+/// `dead_ends`.
+fn solve_both(table: &Table, dead_ends: DeadEnds) -> [Solution<usize, usize>; 5] {
     let config = Config {
         epsilon: 1e-10,
         dead_ends,
@@ -24,6 +26,7 @@ fn solve_both(table: &Table, dead_ends: DeadEnds) -> [Solution<usize, usize>; 4]
         lrtdp(table, 0, &goal, Zero, config).expect("valid input"),
         rtdp(table, 0, &goal, Zero, config).expect("valid input"),
         ilao_star(table, 0, &goal, Zero, config).expect("valid input"),
+        lao_star(table, 0, &goal, Zero, config).expect("valid input"),
     ]
 }
 
@@ -117,6 +120,7 @@ fn unavoidable_trap_cycle_is_unsolvable() {
         lrtdp(&table, 0, &goal, Zero, Config::default()),
         rtdp(&table, 0, &goal, Zero, Config::default()),
         ilao_star(&table, 0, &goal, Zero, Config::default()),
+        lao_star(&table, 0, &goal, Zero, Config::default()),
     ] {
         let proven = proven.expect("valid input");
         assert_eq!(proven.status(), Status::Unsolvable);

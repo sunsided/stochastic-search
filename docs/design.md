@@ -324,15 +324,25 @@ of the cached outcome list in emission order. If rounding leaves `u` past the la
 the last outcome is taken. Together with insertion-ordered ids and first-wins tie
 breaking, one seed gives bit-identical values, policies and statistics.
 
-### LAO* and iLAO* (milestone 2: iLAO*)
+### LAO* and iLAO* (milestone 2)
 
 LAO* (Hansen and Zilberstein 2001) is AO* for cyclic AND/OR graphs: keep an explicit
 graph and the best partial solution graph; expand a tip of the best solution graph; run
 value (or policy) iteration on the ancestors of the expanded states; repeat until the best
 solution graph has no unexpanded non-goal tips, then run a convergence test. iLAO* from the
 same paper expands all tips of the best solution graph in one depth-first traversal and
-backs up states in postorder during that same traversal. Only iLAO* is implemented
-(`ilao_star`): it needs no ancestor sets and is the variant the paper recommends.
+backs up states in postorder during that same traversal. Both are implemented: `ilao_star`
+needs no ancestor sets and is the variant the paper recommends; `lao_star` is the classic
+one-tip variant, kept as the reference and for comparisons.
+
+`lao_star`, on the same LRTDP run: each step collects the best partial solution graph
+(depth-first preorder over greedy arcs, stopping at tips), expands its first tip, collects
+the tip's ancestors along greedy arcs inside that graph (reverse arcs sorted by target,
+then breadth-first from the tip) and sweeps them, tip first, until the residual is below
+epsilon. Without tips, it sweeps the solution graph and runs `checkSolved` on `s0` once a
+sweep's residual is below epsilon, as iLAO* does. Every sweep counts in `Stats::sweeps`
+and may trigger the doubling dead-end proof. Rebuilding the graph per expansion makes it
+quadratic in the solution size, which is why the paper improved it.
 
 Implementation, on the LRTDP run (`space`, meter, dead-end proofs and events shared):
 
@@ -519,7 +529,7 @@ overestimates are allowed (they only void the optimality bound). Neither panics.
 
 1. Model traits, explicit state space, value iteration, LRTDP, tests. (this draft)
 2. Plain RTDP and iLAO*, sharing `space` and the LRTDP run. (done) Bounded RTDP with
-   finite upper bounds (done). FRTDP and one-tip LAO*.
+   finite upper bounds (done). One-tip LAO* (done). FRTDP.
 3. CG-iLAO*; policy evaluation utilities (exact evaluation of a fixed policy by linear
    solve or iteration); discounted MDP adapter.
 4. Belief-space trait set; POMCP; DESPOT. (done, one-shot) Next: belief tracking and tree

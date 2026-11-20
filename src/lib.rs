@@ -1,6 +1,6 @@
 //! # Stochastic search
 //!
-//! Planning under probabilistic outcomes: value iteration, RTDP, labeled RTDP and iLAO* for
+//! Planning under probabilistic outcomes: value iteration, RTDP, labeled RTDP, BRTDP, LAO* and iLAO* for
 //! fully observable problems; POMCP and DESPOT for partially observable ones.
 //!
 //! A problem is a stochastic shortest path (SSP) problem: reach a goal state with minimal
@@ -26,6 +26,8 @@
 //!   its stopping rule. The classic baseline.
 //! - [`brtdp()`]: bounded RTDP (McMahan, Likhachev and Gordon 2005). Keeps a lower and an
 //!   upper bound and samples where they are far apart; anytime, with a known gap.
+//! - [`lao_star()`]: classic LAO* (Hansen and Zilberstein 2001), one tip per expansion
+//!   step with value iteration on its ancestors. The paper's original; slower than iLAO*.
 //! - [`ilao_star()`]: improved LAO* (Hansen and Zilberstein 2001). Grows the best partial
 //!   solution graph in depth-first passes; no sampling.
 //! - [`value_iteration()`]: value iteration over every reachable state. The exact reference.
@@ -104,7 +106,7 @@
 //!
 //! ## Planned scope
 //!
-//! - AND/OR heuristic search: LAO* (the one-tip-at-a-time variant), CG-iLAO*
+//! - AND/OR heuristic search: CG-iLAO*
 //! - Belief tracking between POMDP decisions (POMCP's particle reinvigoration, tree reuse)
 //!
 //! See `docs/design.md` in the repository for the design and milestones.
@@ -126,6 +128,7 @@ mod config;
 mod despot;
 mod error;
 mod ilao;
+mod lao;
 mod lrtdp;
 mod meter;
 mod model;
@@ -144,6 +147,7 @@ pub use config::{Config, DeadEnds};
 pub use despot::{DespotConfig, despot};
 pub use error::{Error, PROBABILITY_TOLERANCE};
 pub use ilao::ilao_star;
+pub use lao::lao_star;
 pub use lrtdp::lrtdp;
 pub use model::{Goal, Heuristic, HeuristicFn, Mdp, Zero, heuristic_fn};
 pub use observer::{Event, Observer, ObserverFn, observer_fn};

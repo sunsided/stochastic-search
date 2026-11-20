@@ -1,9 +1,10 @@
-//! Property tests on random SSPs: LRTDP, RTDP and iLAO* against value iteration and the
+//! Property tests on random SSPs: LRTDP, RTDP, LAO* and iLAO* against value iteration and the
 //! raw-table oracle.
 
 use proptest::prelude::*;
 use stochastic_search::{
-    Config, DeadEnds, Solution, Zero, heuristic_fn, ilao_star, lrtdp, rtdp, value_iteration,
+    Config, DeadEnds, Solution, Zero, heuristic_fn, ilao_star, lao_star, lrtdp, rtdp,
+    value_iteration,
 };
 
 use crate::oracle::{determinization, optimal_values, policy_envelope, policy_is_proper, q_value};
@@ -28,10 +29,17 @@ enum Algorithm {
     Rtdp,
     /// [`ilao_star`].
     IlaoStar,
+    /// [`lao_star`].
+    LaoStar,
 }
 
 /// Every [`Algorithm`].
-const ALGORITHMS: [Algorithm; 3] = [Algorithm::Lrtdp, Algorithm::Rtdp, Algorithm::IlaoStar];
+const ALGORITHMS: [Algorithm; 4] = [
+    Algorithm::Lrtdp,
+    Algorithm::Rtdp,
+    Algorithm::IlaoStar,
+    Algorithm::LaoStar,
+];
 
 /// Solves `table` from state 0 with `algorithm` and the given heuristic values.
 fn solve_with(
@@ -55,6 +63,7 @@ fn solve_with(
         Algorithm::Lrtdp => lrtdp(table, 0, &goal, heuristic, config),
         Algorithm::Rtdp => rtdp(table, 0, &goal, heuristic, config),
         Algorithm::IlaoStar => ilao_star(table, 0, &goal, heuristic, config),
+        Algorithm::LaoStar => lao_star(table, 0, &goal, heuristic, config),
     }
     .expect("valid input")
 }
@@ -134,7 +143,7 @@ proptest! {
         prop_assert!((solution.initial_value() - expected[0]).abs() < 1e-8);
     }
 
-    /// LRTDP, RTDP and iLAO* with the blind and the determinization heuristic stay within
+    /// LRTDP, RTDP, LAO* and iLAO* with the blind and the determinization heuristic stay within
     /// the design bound of `V*`, are epsilon-consistent on their envelopes, and return proper
     /// policies.
     #[test]
