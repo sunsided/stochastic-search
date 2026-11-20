@@ -47,7 +47,9 @@ fn pomcp_listens_to_the_tiger_first() {
         .expect("valid input");
 
         assert_eq!(plan.action, TigerAction::Listen, "seed {seed}");
-        assert_eq!(plan.stats.trials, 20_000);
+        assert_eq!(plan.stats.simulations, 20_000);
+        assert!(plan.stats.steps >= plan.stats.simulations);
+        assert!(plan.stats.depth >= 1 && plan.stats.nodes > 1);
     }
 }
 
@@ -198,11 +200,9 @@ fn despot_tiger(left: usize, total: usize, seed: u64) -> Plan<TigerAction> {
 #[test]
 fn despot_listens_to_the_tiger_first() {
     for seed in SEEDS {
-        assert_eq!(
-            despot_tiger(1, 2, seed).action,
-            TigerAction::Listen,
-            "seed {seed}"
-        );
+        let plan = despot_tiger(1, 2, seed);
+        assert_eq!(plan.action, TigerAction::Listen, "seed {seed}");
+        assert!(plan.stats.steps > plan.stats.nodes && plan.stats.depth >= 1);
     }
 }
 
@@ -312,8 +312,8 @@ fn despot_with_huge_regularization_follows_the_default_policy() {
 
     assert_eq!(plan.action, TigerAction::Listen);
     assert_eq!(plan.status, Status::Converged);
-    assert_eq!(plan.stats.trials, 0);
-    assert_eq!(plan.stats.states, 1);
+    assert_eq!(plan.stats.simulations, 0);
+    assert_eq!(plan.stats.nodes, 1);
 }
 
 /// Bad settings, empty beliefs and NaN bounds are errors, not panics.
@@ -369,4 +369,23 @@ fn despot_validates_its_input() {
             Err(Error::InvalidConfig { .. })
         ));
     }
+}
+
+/// Pins one POMCP and one DESPOT plan to the bits of the one-shot planners as first
+/// released, so refactors of the planners (tree reuse, counters, events) keep them.
+#[test]
+fn planners_keep_their_pinned_values() {
+    let plan = pomcp(
+        &Tiger,
+        &tiger_belief(1, 2),
+        UniformRandom,
+        pomcp_config(7, 110.0, 2_000),
+    )
+    .expect("valid input");
+    assert_eq!(plan.action, TigerAction::Listen);
+    assert_eq!(plan.value.to_bits(), 0xc078_f152_1e03_7afb);
+
+    let plan = despot_tiger(1, 2, 5);
+    assert_eq!(plan.action, TigerAction::Listen);
+    assert_eq!(plan.value.to_bits(), 0x403a_ce5a_27f6_1342);
 }

@@ -1,4 +1,4 @@
-//! Run counters ([`Stats`]) and early stopping ([`Budget`], [`Limits`]).
+//! Run counters ([`Stats`], [`TreeStats`]) and early stopping ([`Budget`], [`Limits`]).
 
 pub use search_core::Budget;
 
@@ -20,6 +20,26 @@ pub struct Stats {
     pub expanded: u64,
     /// Distinct states stored, expanded or not, including goals and dead ends.
     pub states: u64,
+}
+
+/// Counters collected during one call of a tree planner ([`pomcp`](crate::pomcp()),
+/// [`despot`](crate::despot())), returned in [`Plan::stats`](crate::Plan::stats) and given
+/// to the budget.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct TreeStats {
+    /// POMCP simulations or DESPOT explorations started.
+    pub simulations: u64,
+    /// Nodes in the tree: POMCP history nodes, DESPOT belief nodes. After a re-rooting by
+    /// tree reuse, only the kept nodes.
+    pub nodes: u64,
+    /// Node value updates: POMCP action-node updates along each simulation's path, DESPOT
+    /// belief-node backups.
+    pub backups: u64,
+    /// Calls of [`Pomdp::step`](crate::Pomdp::step), in the tree, in rollouts and in
+    /// default-policy simulations.
+    pub steps: u64,
+    /// The depth of the deepest tree node, counted from the current root.
+    pub depth: u64,
 }
 
 /// Simple counter limits.
@@ -108,6 +128,17 @@ impl Limits {
 impl Default for Limits {
     fn default() -> Self {
         Self::DEFAULT
+    }
+}
+
+/// For the tree planners, [`Limits::max_trials`] caps [`TreeStats::simulations`],
+/// [`Limits::max_states`] caps [`TreeStats::nodes`] and [`Limits::max_backups`] caps
+/// [`TreeStats::backups`].
+impl Budget<TreeStats> for Limits {
+    fn exhausted(&mut self, stats: &TreeStats) -> bool {
+        self.max_backups.is_some_and(|max| stats.backups >= max)
+            || self.max_trials.is_some_and(|max| stats.simulations >= max)
+            || self.max_states.is_some_and(|max| stats.nodes >= max)
     }
 }
 

@@ -150,7 +150,7 @@ mod value_iteration;
 pub use bounds::brtdp::{BrtdpConfig, brtdp};
 pub use bounds::frtdp::{FrtdpConfig, frtdp};
 pub use bounds::vpi::{VpiRtdpConfig, vpi_rtdp};
-pub use budget::{Budget, Limits, Stats};
+pub use budget::{Budget, Limits, Stats, TreeStats};
 pub use config::{Config, DeadEnds};
 pub use despot::{DespotConfig, despot};
 pub use error::{Error, PROBABILITY_TOLERANCE};

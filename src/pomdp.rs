@@ -9,7 +9,7 @@
 
 use rand_core::Rng;
 
-use crate::budget::Stats;
+use crate::budget::TreeStats;
 use crate::error::Error;
 use crate::solution::Status;
 
@@ -173,7 +173,7 @@ pub struct Plan<A> {
     /// it always reports an exhausted budget.
     pub status: Status,
     /// Counters of the call; see each planner for what they count.
-    pub stats: Stats,
+    pub stats: TreeStats,
 }
 
 /// Collects the actions of `pomdp` in emission order.

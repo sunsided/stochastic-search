@@ -15,7 +15,7 @@ mod tree;
 
 use alloc::vec::Vec;
 
-use crate::budget::{Budget, Limits, Stats};
+use crate::budget::{Budget, Limits, TreeStats};
 use crate::error::Error;
 use crate::pomcp::tree::{ROOT, Tree};
 use crate::pomdp::{
@@ -50,9 +50,8 @@ pub struct PomcpConfig<B = Limits> {
     pub max_depth: usize,
     /// Seed of the simulations. A seed reproduces a call exactly. Default `0`.
     pub seed: u64,
-    /// Stops the search. Asked before every simulation, with [`Stats::trials`] counting
-    /// simulations, [`Stats::states`] the history nodes in the tree and [`Stats::backups`]
-    /// the action-value updates. Default [`PomcpConfig::DEFAULT_LIMITS`].
+    /// Stops the search. Asked before every simulation with the [`TreeStats`] so far.
+    /// Default [`PomcpConfig::DEFAULT_LIMITS`].
     pub budget: B,
 }
 
@@ -79,7 +78,7 @@ impl Default for PomcpConfig {
 impl<B> PomcpConfig<B> {
     /// Returns the same configuration with another budget.
     #[must_use]
-    pub fn with_budget<B2: Budget<Stats>>(self, budget: B2) -> PomcpConfig<B2> {
+    pub fn with_budget<B2: Budget<TreeStats>>(self, budget: B2) -> PomcpConfig<B2> {
         PomcpConfig {
             discount: self.discount,
             exploration: self.exploration,
@@ -180,7 +179,7 @@ where
     P::Action: Clone,
     P::Observation: PartialEq,
     R: RolloutPolicy<P::State>,
-    B: Budget<Stats>,
+    B: Budget<TreeStats>,
 {
     config.validate()?;
     if belief.is_empty() {
@@ -198,12 +197,12 @@ where
         exploration: config.exploration,
         max_depth: config.max_depth,
         budget: config.budget,
-        stats: Stats::default(),
+        stats: TreeStats::default(),
         path: Vec::new(),
     };
 
     while !search.exhausted() {
-        search.stats.trials += 1;
+        search.stats.simulations += 1;
         let particle = belief[below(&mut search.rng, belief.len())].clone();
         search.simulate(particle)?;
     }
@@ -232,7 +231,7 @@ struct Search<'a, P: Pomdp, R, B> {
     /// The caller's budget.
     budget: B,
     /// The counters so far.
-    stats: Stats,
+    stats: TreeStats,
     /// Reused buffer: the action nodes of the current simulation and their rewards.
     path: Vec<(u32, f64)>,
 }
@@ -244,11 +243,11 @@ where
     P::Action: Clone,
     P::Observation: PartialEq,
     R: RolloutPolicy<P::State>,
-    B: Budget<Stats>,
+    B: Budget<TreeStats>,
 {
     /// Syncs the counters and asks the budget whether to stop.
     fn exhausted(&mut self) -> bool {
-        self.stats.states = self.tree.len() as u64;
+        self.stats.nodes = self.tree.len() as u64;
 
         self.budget.exhausted(&self.stats)
     }
@@ -284,6 +283,7 @@ where
             let action = self.tree.select(node, self.exploration);
             let label = &self.actions[self.tree.position(node, action)];
             let step = self.pomdp.step(&state, label, &mut self.rng);
+            self.stats.steps += 1;
             check_reward(&state, step.reward)?;
             self.path.push((action, step.reward));
             if step.terminal {
@@ -291,6 +291,7 @@ where
             }
 
             node = self.tree.child(action, step.observation);
+            self.stats.depth = self.stats.depth.max(depth as u64 + 1);
             state = step.state;
         }
 
@@ -311,6 +312,7 @@ where
                 .rollout
                 .action(&state, self.actions.len(), &mut self.rng);
             let step = self.pomdp.step(&state, &self.actions[index], &mut self.rng);
+            self.stats.steps += 1;
             check_reward(&state, step.reward)?;
             total += weight * step.reward;
             if step.terminal {
@@ -338,7 +340,7 @@ where
     /// The root action with the highest average return, ties to the first emitted.
     fn recommend(mut self) -> Plan<P::Action> {
         let (position, value) = self.tree.best_root_action();
-        self.stats.states = self.tree.len() as u64;
+        self.stats.nodes = self.tree.len() as u64;
 
         Plan {
             action: self.actions[position].clone(),

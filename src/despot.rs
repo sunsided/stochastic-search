@@ -18,7 +18,7 @@ use core::mem;
 
 use alloc::vec::Vec;
 
-use crate::budget::{Budget, Limits, Stats};
+use crate::budget::{Budget, Limits, TreeStats};
 use crate::despot::tree::{Branch, Node, ROOT, Tree, UNEXPANDED};
 use crate::error::Error;
 use crate::pomdp::{
@@ -64,9 +64,8 @@ pub struct DespotConfig<B = Limits> {
     pub target_gap: f64,
     /// Seed of the scenarios. A seed reproduces a call exactly. Default `0`.
     pub seed: u64,
-    /// Stops the search. Asked before every exploration, with [`Stats::trials`] counting
-    /// explorations, [`Stats::states`] the tree nodes and [`Stats::backups`] the node
-    /// backups. Default [`DespotConfig::DEFAULT_LIMITS`].
+    /// Stops the search. Asked before every exploration with the [`TreeStats`] so far.
+    /// Default [`DespotConfig::DEFAULT_LIMITS`].
     pub budget: B,
 }
 
@@ -96,7 +95,7 @@ impl Default for DespotConfig {
 impl<B> DespotConfig<B> {
     /// Returns the same configuration with another budget.
     #[must_use]
-    pub fn with_budget<B2: Budget<Stats>>(self, budget: B2) -> DespotConfig<B2> {
+    pub fn with_budget<B2: Budget<TreeStats>>(self, budget: B2) -> DespotConfig<B2> {
         DespotConfig {
             discount: self.discount,
             scenarios: self.scenarios,
@@ -222,7 +221,7 @@ where
     P::Observation: PartialEq,
     R: RolloutPolicy<P::State>,
     U: FnMut(&P::State) -> f64,
-    B: Budget<Stats>,
+    B: Budget<TreeStats>,
 {
     let mut search = Search::new(pomdp, belief, default, upper, config)?;
     let status = search.run()?;
@@ -245,7 +244,7 @@ struct Search<'a, P: Pomdp, R, U, B> {
     /// The caller's budget.
     budget: B,
     /// The counters so far.
-    stats: Stats,
+    stats: TreeStats,
     /// The seed the scenario streams derive from.
     seed: u64,
     /// The discount factor.
@@ -272,7 +271,7 @@ where
     P::Observation: PartialEq,
     R: RolloutPolicy<P::State>,
     U: FnMut(&P::State) -> f64,
-    B: Budget<Stats>,
+    B: Budget<TreeStats>,
 {
     /// Validates the input, samples the scenarios and initializes the root.
     ///
@@ -306,7 +305,7 @@ where
             default,
             upper,
             budget: config.budget,
-            stats: Stats::default(),
+            stats: TreeStats::default(),
             seed: config.seed,
             discount: config.discount,
             powers: powers(config.discount, config.max_depth + 1),
@@ -346,17 +345,17 @@ where
     /// Returns [`Error::InvalidReward`] or [`Error::InvalidHeuristic`] for bad model output.
     fn run(&mut self) -> Result<Status, Error<P::State>> {
         while self.gap(ROOT) > self.target_gap {
-            self.stats.states = self.tree.nodes.len() as u64;
+            self.stats.nodes = self.tree.nodes.len() as u64;
             if self.budget.exhausted(&self.stats) {
                 return Ok(Status::BudgetExhausted);
             }
 
-            self.stats.trials += 1;
+            self.stats.simulations += 1;
             let leaf = self.explore()?;
             self.back_up_path(leaf);
         }
 
-        self.stats.states = self.tree.nodes.len() as u64;
+        self.stats.nodes = self.tree.nodes.len() as u64;
 
         Ok(Status::Converged)
     }
@@ -526,6 +525,7 @@ where
         for (scenario, state) in scenarios {
             let mut rng = self.stream(*scenario, depth, false);
             let step = self.pomdp.step(state, &self.actions[position], &mut rng);
+            self.stats.steps += 1;
             check_reward(state, step.reward)?;
             reward_sum += step.reward;
             if step.terminal {
@@ -587,6 +587,7 @@ where
         )]
         let count = scenarios.len() as f64;
         let default_value = default_sum / count;
+        self.stats.depth = self.stats.depth.max(depth as u64);
         let upper = (upper_sum / count).max(default_value);
         let scale = count / self.scenarios * self.powers[depth.min(self.max_depth + 1)];
         let default_utility = scale * default_value;
@@ -625,6 +626,7 @@ where
             let position = self.default.action(&state, self.actions.len(), &mut choice);
             let mut rng = self.stream(scenario, step_depth, false);
             let step = self.pomdp.step(&state, &self.actions[position], &mut rng);
+            self.stats.steps += 1;
             check_reward(&state, step.reward)?;
             total += weight * step.reward;
             if step.terminal {
