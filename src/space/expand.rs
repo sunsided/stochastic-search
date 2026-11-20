@@ -23,7 +23,7 @@ impl<S: Hash + Eq + Clone, A> Space<S, A> {
     /// expansion leaves the state unexpanded.
     pub(crate) fn expand<M, G, H>(
         &mut self,
-        problem: &Problem<'_, M, G, H>,
+        problem: &mut Problem<'_, M, G, H>,
         id: Id,
     ) -> Result<(), Error<S>>
     where
@@ -69,7 +69,7 @@ impl<S: Hash + Eq + Clone, A> Space<S, A> {
     /// See [`Space::expand`].
     fn cache_actions<M, G, H>(
         &mut self,
-        problem: &Problem<'_, M, G, H>,
+        problem: &mut Problem<'_, M, G, H>,
         id: Id,
         raw_actions: &mut Vec<(A, f64)>,
     ) -> Result<(), Error<S>>
@@ -105,7 +105,7 @@ impl<S: Hash + Eq + Clone, A> Space<S, A> {
     /// See [`Space::expand`].
     fn cache_outcomes<M, G, H>(
         &mut self,
-        problem: &Problem<'_, M, G, H>,
+        problem: &mut Problem<'_, M, G, H>,
         id: Id,
         action: &A,
     ) -> Result<(u32, u32), Error<S>>
@@ -146,7 +146,7 @@ impl<S: Hash + Eq + Clone, A> Space<S, A> {
     /// Returns [`Error::InvalidHeuristic`] for an invalid estimate of a new successor.
     fn intern_outcomes<M, G, H>(
         &mut self,
-        problem: &Problem<'_, M, G, H>,
+        problem: &mut Problem<'_, M, G, H>,
         raw: &mut Vec<(S, f64)>,
     ) -> Result<(), Error<S>>
     where

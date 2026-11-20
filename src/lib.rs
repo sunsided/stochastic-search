@@ -7,7 +7,8 @@
 //! expected total cost, where every action has a cost and a probability distribution over
 //! successor states. It is described by small capability traits instead of one universal
 //! problem trait: the MDP implements [`Mdp`], the goal test is a [`Goal`] and the initial
-//! value estimate a [`Heuristic`]. Both are implemented for closures. Every algorithm takes
+//! value estimate a [`Heuristic`]. Closures work for both (wrap heuristic closures in
+//! [`heuristic_fn`]). Every algorithm takes
 //! a [`Config`] and returns a [`Solution`]: a value function and a greedy policy, plus a
 //! [`Status`] and [`Stats`].
 //!
@@ -28,7 +29,7 @@
 //! ## Example
 //!
 //! ```
-//! use stochastic_search::{Config, Mdp, lrtdp};
+//! use stochastic_search::{Config, Mdp, heuristic_fn, lrtdp};
 //!
 //! /// A die roll: action `roll` (cost 1) ends on a six; action `pay` (cost 4) ends always.
 //! struct Dice;
@@ -53,7 +54,8 @@
 //!     }
 //! }
 //!
-//! let solution = lrtdp(&Dice, false, &|done: &bool| *done, &|_: &bool| Some(1.0), Config::default())?;
+//! let heuristic = heuristic_fn(|_: &bool| Some(1.0));
+//! let solution = lrtdp(&Dice, false, &|done: &bool| *done, heuristic, Config::default())?;
 //!
 //! // Rolling takes 6 attempts in expectation, so paying 4 is cheaper.
 //! assert_eq!(solution.initial_action(), Some(&"pay"));
@@ -95,6 +97,6 @@ pub use budget::{Budget, Limits, Stats};
 pub use config::{Config, DeadEnds};
 pub use error::{Error, PROBABILITY_TOLERANCE};
 pub use lrtdp::lrtdp;
-pub use model::{Goal, Heuristic, Mdp, Zero};
+pub use model::{Goal, Heuristic, HeuristicFn, Mdp, Zero, heuristic_fn};
 pub use solution::{Solution, SolveResult, Status};
 pub use value_iteration::value_iteration;

@@ -1,13 +1,10 @@
 //! Value iteration over the reachable state space, the reference oracle for the heuristic
 //! search algorithms.
 
-mod almost_sure;
-
 use core::hash::Hash;
 
 use crate::budget::Budget;
 use crate::config::Config;
-use crate::error::Error;
 
 use crate::meter::{Halt, Meter, finish};
 use crate::model::{Goal, Mdp, Zero};
@@ -20,14 +17,17 @@ use crate::space::{Id, Kind, Problem, Space};
 /// the largest Bellman residual of a sweep is below [`Config::epsilon`]. Under
 /// [`DeadEnds::Infinite`](crate::DeadEnds::Infinite), states without a policy that reaches a
 /// goal with probability 1 are found first by graph analysis and valued at infinity, so the
-/// sweeps converge whenever every action costs more than zero.
+/// sweeps converge whenever every action costs more than zero; if the initial state is one
+/// of them, the status is [`Status::Unsolvable`](crate::Status::Unsolvable). Both the state
+/// enumeration and the sweeps ask [`Config::budget`] before every step, so the default
+/// limits stop runs on huge or infinite state spaces.
 ///
 /// Meant as an exact reference on small problems: it stores the whole reachable space.
 /// [`Config::seed`] and [`Config::max_trial_length`] are ignored.
 ///
 /// # Errors
 ///
-/// Returns an [`Error`] for an invalid [`Config`] or invalid MDP output in a reachable state.
+/// Returns an [`Error`](crate::Error) for an invalid [`Config`] or invalid MDP output in a reachable state.
 ///
 /// # Panics
 ///
@@ -76,64 +76,72 @@ where
     B: Budget,
 {
     config.validate()?;
-    let problem = Problem {
+    let mut problem = Problem {
         mdp,
         goal,
-        heuristic: &Zero,
+        heuristic: Zero,
         cap: config.dead_ends.cap(),
     };
 
     let mut space = Space::new(problem.cap);
-    let start = space.intern(&problem, initial)?;
-    explore(&mut space, &problem)?;
-    if problem.cap.is_infinite() {
-        exclude_dead_ends(&mut space);
-    }
-
+    let start = space.intern(&mut problem, initial)?;
     let mut meter = Meter::new(config.budget);
-    let status = finish(sweep_until_converged(
-        &mut space,
-        &mut meter,
-        config.epsilon,
-    ))?;
+    let status = finish(solve(&mut space, &mut problem, &mut meter, config.epsilon))?;
     meter.sync(&space);
 
     Ok(Solution::new(space, start, status, meter.stats))
 }
 
-/// Expands every state reachable from the interned states, in discovery order.
+/// Explores the reachable space, proves dead ends under infinite cost, and sweeps.
 ///
 /// # Errors
 ///
-/// Returns the first invalid MDP output.
-fn explore<M, G>(
+/// Returns [`Halt`] when the budget runs out or the input is invalid.
+fn solve<M, G, B>(
     space: &mut Space<M::State, M::Action>,
-    problem: &Problem<'_, M, G, Zero>,
-) -> Result<(), Error<M::State>>
+    problem: &mut Problem<'_, M, G, Zero>,
+    meter: &mut Meter<B>,
+    epsilon: f64,
+) -> Result<(), Halt<M::State>>
 where
     M: Mdp,
     M::State: Clone + Eq + Hash,
     G: Goal<M::State>,
+    B: Budget,
+{
+    explore(space, problem, meter)?;
+    if problem.cap.is_infinite() {
+        space.mark_dead_ends();
+    }
+
+    sweep_until_converged(space, meter, epsilon)
+}
+
+/// Expands every state reachable from the interned states, in discovery order, asking the
+/// budget before each expansion.
+///
+/// # Errors
+///
+/// Returns [`Halt`] when the budget runs out or the input is invalid.
+fn explore<M, G, B>(
+    space: &mut Space<M::State, M::Action>,
+    problem: &mut Problem<'_, M, G, Zero>,
+    meter: &mut Meter<B>,
+) -> Result<(), Halt<M::State>>
+where
+    M: Mdp,
+    M::State: Clone + Eq + Hash,
+    G: Goal<M::State>,
+    B: Budget,
 {
     let mut next = 0;
     while next < space.len() {
+        meter.check(space)?;
         space.expand(problem, id_of(next))?;
         next += 1;
     }
 
     Ok(())
-}
-
-/// Turns every open state without a proper policy into a dead end valued at infinity.
-fn exclude_dead_ends<S, A>(space: &mut Space<S, A>) {
-    let proper = almost_sure::reaches_goal_almost_surely(space);
-    for (index, has_proper_policy) in proper.into_iter().enumerate() {
-        let node = space.node_mut(id_of(index));
-        if !has_proper_policy && node.kind == Kind::Open {
-            node.kind = Kind::DeadEnd;
-            node.value = f64::INFINITY;
-        }
-    }
 }
 
 /// Runs Gauss-Seidel sweeps over the open states until a sweep's largest residual is below

@@ -33,29 +33,59 @@ impl<F: FnMut(&Stats) -> bool> Budget for F {
     }
 }
 
-/// Simple counter limits. The default is unlimited.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+/// Simple counter limits.
+///
+/// The default, [`Limits::DEFAULT`], is generous but finite, so a run with the default
+/// [`Config`](crate::Config) always returns. [`Limits::unlimited`] removes every limit.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Limits {
     /// Stop once this many Bellman backups have been performed. `None` is unbounded.
     pub max_backups: Option<u64>,
     /// Stop once this many LRTDP trials have been started. `None` is unbounded.
     pub max_trials: Option<u64>,
+    /// Stop once this many states are stored. `None` is unbounded.
+    ///
+    /// Bounds memory, and the state enumeration of value iteration on huge or infinite
+    /// state spaces. Checked before every expansion and backup, so the final count may
+    /// exceed the limit by the successors of one state.
+    pub max_states: Option<u64>,
 }
 
 impl Limits {
-    /// No limits: the run continues until it converges.
-    pub const NONE: Self = Self {
-        max_backups: None,
+    /// The default limits: `10^8` backups and `10^7` stored states, no trial limit.
+    ///
+    /// Large enough for any problem the algorithms solve in minutes, small enough that a
+    /// non-converging run (see [`lrtdp`](crate::lrtdp())'s termination notes) stops instead of
+    /// hanging.
+    pub const DEFAULT: Self = Self {
+        max_backups: Some(100_000_000),
         max_trials: None,
+        max_states: Some(10_000_000),
     };
 
-    /// Stops after `max` Bellman backups.
+    /// No limits: the run continues until it converges, which may be never.
+    #[must_use]
+    pub const fn unlimited() -> Self {
+        Self {
+            max_backups: None,
+            max_trials: None,
+            max_states: None,
+        }
+    }
+
+    /// Stops after `max` Bellman backups, with no other limit.
     #[must_use]
     pub const fn backups(max: u64) -> Self {
         Self {
             max_backups: Some(max),
-            max_trials: None,
+            ..Self::unlimited()
         }
+    }
+}
+
+impl Default for Limits {
+    fn default() -> Self {
+        Self::DEFAULT
     }
 }
 
@@ -63,5 +93,6 @@ impl Budget for Limits {
     fn exhausted(&mut self, stats: &Stats) -> bool {
         self.max_backups.is_some_and(|max| stats.backups >= max)
             || self.max_trials.is_some_and(|max| stats.trials >= max)
+            || self.max_states.is_some_and(|max| stats.states >= max)
     }
 }

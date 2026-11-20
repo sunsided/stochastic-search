@@ -31,19 +31,40 @@ use crate::space::{Id, Problem, Space};
 /// greedy policy has a Bellman residual of at most [`Config::epsilon`]. Stops when `initial`
 /// is solved or the [`Config::budget`] is exhausted.
 ///
-/// With an admissible `heuristic` (use [`Zero`](crate::Zero) if there is none) and the SSP
-/// assumptions (a proper policy exists, every action costs more than zero), a converged
-/// run returns `V(initial) <= V*(initial)`, and the returned policy reaches a goal with
-/// probability 1. See `docs/design.md`, section "Convergence criterion", for the exact
-/// guarantee and the bound on `V*(initial) - V(initial)`.
+/// The heuristic is taken by value; pass `&mut h` to keep it, or wrap a closure in
+/// [`heuristic_fn`](crate::heuristic_fn). Use [`Zero`](crate::Zero) if there is none.
+///
+/// # Guarantee
+///
+/// When the status is [`Status::Converged`](crate::Status::Converged), with `V` the returned
+/// values and `pi` the returned policy, on every state `s` reachable from `initial` under
+/// `pi` (the *envelope*):
+///
+/// - `|V(s) - Q(s, pi(s))| <= epsilon`, for any heuristic. The policy is the greedy action
+///   frozen when `s` was labeled solved, and solved states and their policy successors are
+///   never updated again.
+/// - `|V(s) - min_a Q(s, a)| <= epsilon` (the full Bellman residual) if the heuristic is
+///   consistent, so that backups never lower a value.
+/// - If the heuristic is admissible: `V(initial) <= V*(initial)`.
+/// - If, in addition, every action costs at least `c_min > epsilon`:
+///   `V*(initial) - V(initial) <= epsilon * V(initial) / (c_min - epsilon)`, and `pi`
+///   reaches a goal with probability 1.
+///
+/// Epsilon-consistency alone is not `|V(initial) - V*(initial)| <= epsilon`; to get a
+/// tolerance `t`, pick `epsilon <= t * c_min / (V + t)` for an upper estimate `V` of the
+/// optimal value. Values outside the envelope are only bounds. See `docs/design.md`, section
+/// "Convergence criterion".
 ///
 /// # Termination
 ///
-/// Under [`DeadEnds::Infinite`](crate::DeadEnds::Infinite), if no proper policy exists from
-/// `initial` and a cycle that never reaches a goal is reachable, the values rise forever: with
-/// the default unlimited budget, the call does not return. Use
-/// [`DeadEnds::Penalty`](crate::DeadEnds::Penalty) or a budget when that can happen. Zero-cost
-/// cycles violate the SSP assumptions and are not detected.
+/// With the default [`Limits`](crate::Limits) budget the call always returns; an exhausted
+/// budget yields [`Status::BudgetExhausted`](crate::Status::BudgetExhausted), never a
+/// verdict. Under [`DeadEnds::Infinite`](crate::DeadEnds::Infinite), a trap (a cycle that
+/// never reaches a goal) shows up as cut-off trials; LRTDP then proves by graph analysis
+/// which stored states have no proper policy and makes them dead ends, so avoidable traps
+/// are avoided and an unavoidable one yields [`Status::Unsolvable`](crate::Status::Unsolvable).
+/// With [`Limits::unlimited`](crate::Limits::unlimited), a run on an infinite state space, or
+/// one whose MDP violates the SSP assumptions (zero-cost cycles), may not return.
 ///
 /// Only the states the run touched are stored. One seed gives identical results on every
 /// run.
@@ -63,7 +84,7 @@ use crate::space::{Id, Problem, Space};
 /// failure (expected cost 2):
 ///
 /// ```
-/// use stochastic_search::{Config, Mdp, lrtdp};
+/// use stochastic_search::{Config, Mdp, Zero, lrtdp};
 ///
 /// struct Routes;
 ///
@@ -95,7 +116,7 @@ use crate::space::{Id, Problem, Space};
 ///     &Routes,
 ///     "start",
 ///     &|state: &&str| *state == "goal",
-///     &|_: &&str| Some(0.0),
+///     Zero,
 ///     Config::default(),
 /// )?;
 ///
@@ -108,7 +129,7 @@ pub fn lrtdp<M, G, H, B>(
     mdp: &M,
     initial: M::State,
     goal: &G,
-    heuristic: &H,
+    heuristic: H,
     config: Config<B>,
 ) -> SolveResult<M>
 where
@@ -119,7 +140,7 @@ where
     B: Budget,
 {
     config.validate()?;
-    let problem = Problem {
+    let mut problem = Problem {
         mdp,
         goal,
         heuristic,
@@ -127,7 +148,7 @@ where
     };
 
     let mut space = Space::new(problem.cap);
-    let start = space.intern(&problem, initial)?;
+    let start = space.intern(&mut problem, initial)?;
     let mut run = Run {
         problem,
         space,
@@ -136,6 +157,7 @@ where
         meter: Meter::new(config.budget),
         rng: SplitMix64::new(config.seed),
         epoch: 0,
+        analyzed_at: 0,
         trail: Vec::new(),
         open: Vec::new(),
         closed: Vec::new(),
@@ -163,6 +185,8 @@ struct Run<'a, M: Mdp, G, H, B> {
     rng: SplitMix64,
     /// The epoch of the current solved check, compared against [`Node::mark`](crate::space::Node).
     epoch: u32,
+    /// The backup count at the last dead-end analysis; see [`Run::prove_dead_ends`].
+    analyzed_at: u64,
     /// Reused buffer: the states of the current trial, in visiting order.
     trail: Vec<Id>,
     /// Reused buffer: the frontier of a solved check.
@@ -203,24 +227,50 @@ where
         let mut trail = mem::take(&mut self.trail);
         trail.clear();
 
-        let result = self
-            .walk(start, &mut trail)
-            .and_then(|()| self.unwind(&mut trail));
+        let result = self.walk(start, &mut trail).and_then(|cut_off| {
+            if cut_off {
+                self.prove_dead_ends();
+            }
+
+            self.unwind(&mut trail)
+        });
         self.trail = trail;
 
         result
     }
 
+    /// After a cut-off trial under infinite dead-end cost, proves by graph analysis which
+    /// stored states cannot reach a goal with probability 1 and turns them into dead ends.
+    ///
+    /// Cut-off trials are the symptom of a trap cycle, whose values would otherwise rise
+    /// forever. The analysis is linear in the stored graph per round, so it only runs once at
+    /// least that many backups happened since the previous one; its cost stays proportional
+    /// to the search effort.
+    fn prove_dead_ends(&mut self) {
+        let work = (self.space.len() + self.space.outcome_count()) as u64;
+        let backups = self.meter.stats.backups;
+        if self.problem.cap.is_finite() || backups - self.analyzed_at < work {
+            return;
+        }
+
+        self.analyzed_at = backups;
+        self.space.mark_dead_ends();
+    }
+
     /// Walks greedily from `start` until a solved state, a state without a finite action,
     /// or the trial length limit, backing up every state on the way and recording it in
-    /// `trail`.
+    /// `trail`. Returns `true` if the trial was cut off at the length limit.
     ///
     /// # Errors
     ///
     /// Returns [`Halt`] when the budget runs out or the input is invalid.
-    fn walk(&mut self, start: Id, trail: &mut Vec<Id>) -> Result<(), Halt<M::State>> {
+    fn walk(&mut self, start: Id, trail: &mut Vec<Id>) -> Result<bool, Halt<M::State>> {
         let mut state = start;
-        while !self.space.node(state).solved && trail.len() < self.max_trial_length {
+        while !self.space.node(state).solved {
+            if trail.len() >= self.max_trial_length {
+                return Ok(true);
+            }
+
             trail.push(state);
             self.backup(state)?;
 
@@ -231,7 +281,7 @@ where
             state = self.space.sample(action, self.rng.next_unit());
         }
 
-        Ok(())
+        Ok(false)
     }
 
     /// Checks the trail's states for solved labels, last visited first, and stops at the
@@ -256,7 +306,7 @@ where
     ///
     /// Returns [`Halt`] when the budget runs out or the input is invalid.
     fn backup(&mut self, state: Id) -> Result<(), Halt<M::State>> {
-        self.space.expand(&self.problem, state)?;
+        self.space.expand(&mut self.problem, state)?;
         self.meter.charge_backup(&self.space)?;
         self.space.update(state);
 

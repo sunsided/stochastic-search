@@ -93,7 +93,7 @@ where
     ///
     /// Returns [`Halt`] when the budget runs out or the input is invalid.
     fn freeze_greedy(&mut self, state: Id) -> Result<f64, Halt<M::State>> {
-        self.space.expand(&self.problem, state)?;
+        self.space.expand(&mut self.problem, state)?;
         self.meter.charge_backup(&self.space)?;
 
         let backup = self.space.bellman(state);

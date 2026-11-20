@@ -3,8 +3,10 @@
 //!
 //! As in `heuristic-search`, there is no single "problem" trait. The MDP describes actions,
 //! costs and outcome distributions; the goal test and the heuristic are separate values, so
-//! one MDP can be solved for many goals with many heuristics. [`Goal`] and [`Heuristic`] are
-//! implemented for plain closures.
+//! one MDP can be solved for many goals with many heuristics. [`Goal`] is implemented for
+//! plain closures, [`Heuristic`] for closures wrapped in [`heuristic_fn`].
+
+use alloc::boxed::Box;
 
 /// A finite Markov decision process with action costs.
 ///
@@ -83,9 +85,12 @@ impl<S, F: Fn(&S) -> bool> Goal<S> for F {
 
 /// An estimate of the expected cost from a state to a goal.
 ///
-/// Implemented for every `Fn(&S) -> Option<C>`. The algorithms of this crate use `C = f64`,
-/// which closures infer on their own. The shape matches `heuristic-search`'s trait of the
-/// same name.
+/// `estimate` takes `&mut self`, so a heuristic can keep a reusable workspace (scratch
+/// buffers, caches) without interior mutability. Algorithms take the heuristic by value and
+/// own it for the run; pass `&mut h` to keep `h` and its workspace afterwards. Implemented
+/// for `&mut H` and `Box<H>` of any heuristic `H`, for [`Zero`], and for closures through
+/// [`heuristic_fn`]. The algorithms of this crate use `C = f64`, which closures infer on
+/// their own. The shape matches `heuristic-search`'s trait of the same name.
 ///
 /// LRTDP returns optimal values only if the heuristic is admissible (never overestimates the
 /// optimal expected cost). Inadmissible heuristics never cause a panic; they only void the
@@ -97,12 +102,55 @@ pub trait Heuristic<S, C> {
     /// dead end). Algorithms never expand such states, so a heuristic must only return `None`
     /// when that is certain. NaN and negative infinity are rejected with
     /// [`Error::InvalidHeuristic`](crate::Error::InvalidHeuristic).
-    fn estimate(&self, state: &S) -> Option<C>;
+    ///
+    /// Called once per state, when the state is first stored.
+    fn estimate(&mut self, state: &S) -> Option<C>;
 }
 
-impl<S, C, F: Fn(&S) -> Option<C>> Heuristic<S, C> for F {
-    fn estimate(&self, state: &S) -> Option<C> {
-        self(state)
+impl<S, C, H: Heuristic<S, C> + ?Sized> Heuristic<S, C> for &mut H {
+    fn estimate(&mut self, state: &S) -> Option<C> {
+        (**self).estimate(state)
+    }
+}
+
+impl<S, C, H: Heuristic<S, C> + ?Sized> Heuristic<S, C> for Box<H> {
+    fn estimate(&mut self, state: &S) -> Option<C> {
+        (**self).estimate(state)
+    }
+}
+
+/// Turns a closure `FnMut(&S) -> Option<C>` into a [`Heuristic`].
+///
+/// A blanket impl for closures is not possible next to the one for `&mut H`: `&mut F` is
+/// itself a closure, so the two impls would overlap.
+///
+/// # Example
+///
+/// ```
+/// use stochastic_search::{Heuristic, heuristic_fn};
+///
+/// let mut calls = 0;
+/// let mut h = heuristic_fn(|state: &u32| {
+///     calls += 1;
+///     (*state < 10).then(|| f64::from(10 - state))
+/// });
+///
+/// assert_eq!(h.estimate(&3), Some(7.0));
+/// assert_eq!(h.estimate(&12), None);
+/// drop(h);
+/// assert_eq!(calls, 2);
+/// ```
+pub fn heuristic_fn<S, C, F: FnMut(&S) -> Option<C>>(f: F) -> HeuristicFn<F> {
+    HeuristicFn(f)
+}
+
+/// A closure used as a [`Heuristic`]; created by [`heuristic_fn`].
+#[derive(Debug, Clone, Copy)]
+pub struct HeuristicFn<F>(F);
+
+impl<S, C, F: FnMut(&S) -> Option<C>> Heuristic<S, C> for HeuristicFn<F> {
+    fn estimate(&mut self, state: &S) -> Option<C> {
+        (self.0)(state)
     }
 }
 
@@ -111,7 +159,7 @@ impl<S, C, F: Fn(&S) -> Option<C>> Heuristic<S, C> for F {
 pub struct Zero;
 
 impl<S> Heuristic<S, f64> for Zero {
-    fn estimate(&self, _state: &S) -> Option<f64> {
+    fn estimate(&mut self, _state: &S) -> Option<f64> {
         Some(0.0)
     }
 }

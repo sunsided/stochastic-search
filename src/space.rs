@@ -12,6 +12,7 @@
 //! ```
 
 pub(crate) mod backup;
+mod dead_ends;
 mod expand;
 
 use core::hash::{BuildHasher, Hash};
@@ -32,7 +33,7 @@ pub(crate) struct Problem<'a, M, G, H> {
     /// The goal test.
     pub(crate) goal: &'a G,
     /// The initial value estimate of newly interned states.
-    pub(crate) heuristic: &'a H,
+    pub(crate) heuristic: H,
     /// The value of a dead end and the cap on every value: infinity, or the give-up penalty.
     pub(crate) cap: f64,
 }
@@ -179,6 +180,16 @@ impl<S, A> Space<S, A> {
         &self.outcomes[start as usize..end as usize]
     }
 
+    /// The number of entries in the action arena.
+    pub(crate) fn action_count(&self) -> usize {
+        self.actions.len()
+    }
+
+    /// The number of entries in the outcome arena.
+    pub(crate) fn outcome_count(&self) -> usize {
+        self.outcomes.len()
+    }
+
     /// The value of a dead end and the cap on every value.
     pub(crate) fn cap(&self) -> f64 {
         self.cap
@@ -209,7 +220,7 @@ impl<S: Hash + Eq + Clone, A> Space<S, A> {
     /// Panics if more than `u32::MAX` states are interned.
     pub(crate) fn intern<M, G, H>(
         &mut self,
-        problem: &Problem<'_, M, G, H>,
+        problem: &mut Problem<'_, M, G, H>,
         state: S,
     ) -> Result<Id, Error<S>>
     where
@@ -241,7 +252,7 @@ impl<S: Hash + Eq + Clone, A> Space<S, A> {
 /// # Errors
 ///
 /// Returns [`Error::InvalidHeuristic`] if the heuristic estimates NaN or negative infinity.
-fn initial_node<M, G, H, S>(problem: &Problem<'_, M, G, H>, state: &S) -> Result<Node, Error<S>>
+fn initial_node<M, G, H, S>(problem: &mut Problem<'_, M, G, H>, state: &S) -> Result<Node, Error<S>>
 where
     S: Clone,
     G: Goal<S>,

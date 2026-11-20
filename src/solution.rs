@@ -21,6 +21,11 @@ pub enum Status {
     /// The [`Budget`](crate::Budget) stopped the run first. Values and policy are the ones
     /// reached so far and carry no guarantee.
     BudgetExhausted,
+    /// Proven: no policy reaches a goal with probability 1 from the initial state, so under
+    /// [`DeadEnds::Infinite`](crate::DeadEnds::Infinite) its value is infinite and it has no
+    /// policy action. Never returned under a finite penalty, where giving up is always
+    /// possible.
+    Unsolvable,
 }
 
 /// A value function and a greedy policy over the states a run touched.
@@ -40,7 +45,15 @@ pub struct Solution<S, A> {
 
 impl<S, A> Solution<S, A> {
     /// Wraps the state space of a finished run.
+    ///
+    /// A converged run whose initial value is infinite becomes [`Status::Unsolvable`].
     pub(crate) fn new(space: Space<S, A>, initial: Id, status: Status, counters: Stats) -> Self {
+        let status = if status == Status::Converged && space.node(initial).value.is_infinite() {
+            Status::Unsolvable
+        } else {
+            status
+        };
+
         Self {
             space,
             initial,
@@ -55,7 +68,7 @@ impl<S, A> Solution<S, A> {
         self.status
     }
 
-    /// Returns `true` if the run met its convergence criterion.
+    /// Returns `true` if the run met its convergence criterion with a finite initial value.
     #[must_use]
     pub fn is_converged(&self) -> bool {
         self.status == Status::Converged
@@ -75,8 +88,7 @@ impl<S, A> Solution<S, A> {
 
     /// The value of the initial state: the expected cost to reach a goal.
     ///
-    /// Infinite if no proper policy exists under [`DeadEnds::Infinite`](crate::DeadEnds) and
-    /// the run converged (see that variant for when LRTDP does).
+    /// Infinite exactly when the status is [`Status::Unsolvable`].
     #[must_use]
     pub fn initial_value(&self) -> f64 {
         self.space.node(self.initial).value

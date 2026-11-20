@@ -10,10 +10,10 @@ use crate::error::Error;
 pub enum DeadEnds {
     /// Dead ends cost infinity (the "fragile" SSP semantics).
     ///
-    /// Exact when a proper policy exists from the initial state. If none exists, value
-    /// iteration returns an infinite initial value and no action there. LRTDP does the same
-    /// when every dead end it meets has no actions; if it meets a cycle that never reaches a
-    /// goal, its values rise forever and only the [`Config::budget`] stops it.
+    /// Exact when a proper policy exists from the initial state. If none exists, the run
+    /// ends with [`Status::Unsolvable`](crate::Status::Unsolvable) (or with an exhausted
+    /// budget, if LRTDP cannot prove it in time); see [`lrtdp`](crate::lrtdp())'s
+    /// termination notes.
     #[default]
     Infinite,
     /// Every non-goal state may give up at this finite, non-negative cost.
@@ -65,7 +65,8 @@ pub struct Config<B = Limits> {
     ///
     /// Guards against trials that circle a dead-end trap forever. Default `10_000`.
     pub max_trial_length: usize,
-    /// Stops a run early. Default [`Limits::NONE`].
+    /// Stops a run early. Default [`Limits::DEFAULT`], which is finite, so a run with the
+    /// default configuration always returns.
     pub budget: B,
 }
 
@@ -76,7 +77,7 @@ impl Default for Config {
             dead_ends: DeadEnds::Infinite,
             seed: 0,
             max_trial_length: 10_000,
-            budget: Limits::NONE,
+            budget: Limits::DEFAULT,
         }
     }
 }
