@@ -1,6 +1,6 @@
 [package]
 name = "stochastic-search"
-description = "Planning under probabilistic outcomes: LAO*, iLAO*, RTDP, LRTDP, BRTDP, FRTDP, VPI-RTDP, POMCP and DESPOT"
+description = "Planning under probabilistic outcomes: LAO*, iLAO*, CG-iLAO*, RTDP, LRTDP, BRTDP, FRTDP, VPI-RTDP, POMCP and DESPOT"
 version = "0.0.0"
 edition = "2024"
 rust-version = "1.85"

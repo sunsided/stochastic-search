@@ -432,11 +432,20 @@ last backup; with a monotone `U` (which backups preserve) it satisfies
 
 ### CG-iLAO* (milestone 3)
 
-CG-iLAO* (Schmalz and Trevizan 2024) restricts each backup to the actions that can still be
-optimal under the current values, adding actions to a state only when they could become
-greedy (action pruning in the spirit of "constraint generation"). It needs per-state lower
-bounds on Q-values and an extensible action list, which the arena layout must allow.
-Exact algorithm details are to be checked against the paper before milestone 3.
+CG-iLAO* (Schmalz and Trevizan 2024, Algorithm 2) keeps a per-action "active" flag on top
+of the cached expansions: fringe states are partly expanded with their minimal-Q actions,
+backups use active actions only, and a separation oracle queues candidate constraints
+(inactive actions of a state whose value rose; every action into a state whose value
+fell), which the constraint fix activates when `V(s) > Q(s, a) + epsilon`. All actions are
+still cached (the saving is in Q-value computations). After the paper's termination test,
+LRTDP's solved check over all actions runs on `s0`; a failure queues every inactive action.
+
+Two deviations, both found on random SSPs: an infinite value spreading through active
+actions made whole cycles infinite, where no constraint is violated any more, so a rising
+backup first activates inactive actions below the raised value; and the backup loop could
+climb forever on a cycle of active actions that never reaches the goal, so it also ends
+after a sweep that queued candidates. Values can decrease, so `V <= V*` does not hold; the
+tests check `|V - V*|` against LRTDP's gap bound.
 
 ### Belief space (milestone 4)
 
@@ -589,7 +598,7 @@ overestimates are allowed (they only void the optimality bound). Neither panics.
 2. Plain RTDP and iLAO*, sharing `space` and the LRTDP run. (done) Bounded RTDP with
    finite upper bounds, FRTDP and VPI-RTDP on a shared bounds run (done). One-tip LAO*
    (done).
-3. CG-iLAO*; policy evaluation utilities (exact evaluation of a fixed policy by linear
+3. CG-iLAO* (done); policy evaluation utilities (exact evaluation of a fixed policy by linear
    solve or iteration); discounted MDP adapter.
 4. Belief-space trait set; POMCP; DESPOT; belief tracking and tree reuse between
    decisions (done). Next: decide whether this becomes `pomdp-search`.

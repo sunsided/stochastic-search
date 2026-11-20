@@ -206,7 +206,7 @@ where
     }
 
     /// Returns `true` for an open state that is not labeled solved.
-    fn is_unsolved_open(&self, state: Id) -> bool {
+    pub(crate) fn is_unsolved_open(&self, state: Id) -> bool {
         let node = self.space.node(state);
 
         node.kind == Kind::Open && !node.solved

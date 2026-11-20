@@ -1,7 +1,7 @@
 //! # Stochastic search
 //!
 //! Planning under probabilistic outcomes: value iteration, RTDP, labeled RTDP, BRTDP, FRTDP,
-//! VPI-RTDP, LAO* and iLAO* for
+//! VPI-RTDP, LAO*, iLAO* and CG-iLAO* for
 //! fully observable problems; POMCP and DESPOT for partially observable ones.
 //!
 //! A problem is a stochastic shortest path (SSP) problem: reach a goal state with minimal
@@ -33,6 +33,8 @@
 //!   of perfect information about successors where the bounds are informative.
 //! - [`lao_star()`]: classic LAO* (Hansen and Zilberstein 2001), one tip per expansion
 //!   step with value iteration on its ancestors. The paper's original; slower than iLAO*.
+//! - [`cg_ilao_star()`]: CG-iLAO* (Schmalz and Trevizan 2024). iLAO* over a partial SSP that
+//!   adds an action only when constraint generation finds it necessary.
 //! - [`ilao_star()`]: improved LAO* (Hansen and Zilberstein 2001). Grows the best partial
 //!   solution graph in depth-first passes; no sampling.
 //! - [`value_iteration()`]: value iteration over every reachable state. The exact reference.
@@ -113,10 +115,6 @@
 //! # Ok::<(), stochastic_search::Error<bool>>(())
 //! ```
 //!
-//! ## Planned scope
-//!
-//! - AND/OR heuristic search: CG-iLAO*
-//!
 //! See `docs/design.md` in the repository for the design and milestones.
 //!
 //! ## Status
@@ -133,6 +131,7 @@ extern crate alloc;
 mod belief;
 mod bounds;
 mod budget;
+mod cg_ilao;
 mod config;
 mod despot;
 mod error;
@@ -155,6 +154,7 @@ pub use bounds::brtdp::{BrtdpConfig, brtdp};
 pub use bounds::frtdp::{FrtdpConfig, frtdp};
 pub use bounds::vpi::{VpiRtdpConfig, vpi_rtdp};
 pub use budget::{Budget, Limits, Stats, TreeStats};
+pub use cg_ilao::cg_ilao_star;
 pub use config::{Config, DeadEnds};
 pub use despot::{Despot, DespotConfig, despot};
 pub use error::{Error, PROBABILITY_TOLERANCE};

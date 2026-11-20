@@ -37,6 +37,18 @@ impl<S, A> Space<S, A> {
     /// Evaluates the Bellman equation at `id` under another value function, `value`, with
     /// the rules of [`Space::bellman`]. The bounded algorithms use it for their upper bound.
     pub(crate) fn bellman_under(&self, id: Id, value: impl Fn(Id) -> f64) -> Backup {
+        self.bellman_among(id, value, |_| true)
+    }
+
+    /// Evaluates the Bellman equation at `id` over the actions whose arena index passes
+    /// `include` only, with the rules of [`Space::bellman`]. CG-iLAO* uses it for the actions
+    /// in its partial SSP.
+    pub(crate) fn bellman_among(
+        &self,
+        id: Id,
+        value: impl Fn(Id) -> f64,
+        include: impl Fn(u32) -> bool,
+    ) -> Backup {
         if self.node(id).kind != Kind::Open {
             return Backup {
                 value: value(id),
@@ -46,7 +58,7 @@ impl<S, A> Space<S, A> {
 
         let mut best = f64::INFINITY;
         let mut policy = None;
-        for (index, entry) in self.actions_of(id) {
+        for (index, entry) in self.actions_of(id).filter(|&(index, _)| include(index)) {
             let q = self.q_value(index, entry, &value);
             if q < best {
                 best = q;
@@ -65,6 +77,11 @@ impl<S, A> Space<S, A> {
                 policy: None,
             }
         }
+    }
+
+    /// The Q-value of the action at `index` under the current values.
+    pub(crate) fn q(&self, index: u32) -> f64 {
+        self.q_value(index, self.action(index), |state| self.node(state).value)
     }
 
     /// Backs up `id`: stores the Bellman value and greedy action, and returns the residual.

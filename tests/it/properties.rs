@@ -1,9 +1,9 @@
-//! Property tests on random SSPs: LRTDP, RTDP, LAO* and iLAO* against value iteration and the
+//! Property tests on random SSPs: LRTDP, RTDP, LAO*, iLAO* and CG-iLAO* against value iteration and the
 //! raw-table oracle.
 
 use proptest::prelude::*;
 use stochastic_search::{
-    Config, DeadEnds, Solution, Zero, heuristic_fn, ilao_star, lao_star, lrtdp, rtdp,
+    Config, DeadEnds, Solution, Zero, cg_ilao_star, heuristic_fn, ilao_star, lao_star, lrtdp, rtdp,
     value_iteration,
 };
 
@@ -31,14 +31,17 @@ enum Algorithm {
     IlaoStar,
     /// [`lao_star`].
     LaoStar,
+    /// [`cg_ilao_star`].
+    CgIlaoStar,
 }
 
 /// Every [`Algorithm`].
-const ALGORITHMS: [Algorithm; 4] = [
+const ALGORITHMS: [Algorithm; 5] = [
     Algorithm::Lrtdp,
     Algorithm::Rtdp,
     Algorithm::IlaoStar,
     Algorithm::LaoStar,
+    Algorithm::CgIlaoStar,
 ];
 
 /// Solves `table` from state 0 with `algorithm` and the given heuristic values.
@@ -62,6 +65,7 @@ fn solve_with(
         Algorithm::Rtdp => rtdp(table, 0, &goal, heuristic, config),
         Algorithm::IlaoStar => ilao_star(table, 0, &goal, heuristic, config),
         Algorithm::LaoStar => lao_star(table, 0, &goal, heuristic, config),
+        Algorithm::CgIlaoStar => cg_ilao_star(table, 0, &goal, heuristic, config),
     }
     .expect("valid input")
 }
@@ -76,17 +80,33 @@ fn solve_vi(table: &Table, dead_ends: DeadEnds) -> Solution<usize, usize> {
 }
 
 /// Asserts the LRTDP bound from the design: `V <= V*` and
-/// `V* - V <= epsilon * V / (c_min - epsilon)`.
-fn assert_within_bound(lrtdp_value: f64, optimal: f64, c_min: f64) -> Result<(), TestCaseError> {
-    let gap_bound = EPSILON * lrtdp_value / (c_min - EPSILON);
+/// `V* - V <= epsilon * V / (c_min - epsilon)`. CG-iLAO* lowers values too, so it may end
+/// above `V*`; for it the same bound is checked on `|V - V*|`.
+fn assert_within_bound(
+    algorithm: Algorithm,
+    value: f64,
+    optimal: f64,
+    c_min: f64,
+) -> Result<(), TestCaseError> {
+    let gap_bound = EPSILON * value / (c_min - EPSILON);
+    if matches!(algorithm, Algorithm::CgIlaoStar) {
+        prop_assert!(
+            (value - optimal).abs() <= gap_bound + ROUNDING,
+            "{algorithm:?}: |V - V*| = {} exceeds bound {gap_bound}",
+            (value - optimal).abs()
+        );
+
+        return Ok(());
+    }
+
     prop_assert!(
-        lrtdp_value <= optimal + ROUNDING,
-        "LRTDP {lrtdp_value} above V* {optimal}"
+        value <= optimal + ROUNDING,
+        "{algorithm:?}: V {value} above V* {optimal}"
     );
     prop_assert!(
-        optimal - lrtdp_value <= gap_bound + ROUNDING,
-        "gap {} exceeds bound {gap_bound}",
-        optimal - lrtdp_value
+        optimal - value <= gap_bound + ROUNDING,
+        "{algorithm:?}: gap {} exceeds bound {gap_bound}",
+        optimal - value
     );
 
     Ok(())
@@ -153,7 +173,7 @@ proptest! {
         {
             let solution = solve_with(algorithm, &table, &h, DeadEnds::Infinite, seed);
             prop_assert!(solution.is_converged(), "{algorithm:?}");
-            assert_within_bound(solution.initial_value(), optimal, table.min_cost())?;
+            assert_within_bound(algorithm, solution.initial_value(), optimal, table.min_cost())?;
             assert_consistent(&table, &solution, true)?;
             prop_assert!(policy_is_proper(&table, &solution, 0));
         }
@@ -190,7 +210,7 @@ proptest! {
         {
             let solution = solve_with(algorithm, &table, &h, DeadEnds::Infinite, seed);
             prop_assert!(solution.is_converged(), "{algorithm:?}");
-            assert_within_bound(solution.initial_value(), optimal, table.min_cost())?;
+            assert_within_bound(algorithm, solution.initial_value(), optimal, table.min_cost())?;
             assert_consistent(&table, &solution, false)?;
             prop_assert!(policy_is_proper(&table, &solution, 0));
         }
@@ -208,7 +228,7 @@ proptest! {
 
             prop_assert!(solution.is_converged(), "{algorithm:?}");
             prop_assert!(solution.initial_value() <= f64::from(penalty));
-            assert_within_bound(solution.initial_value(), optimal, table.min_cost().min(f64::from(penalty)))?;
+            assert_within_bound(algorithm, solution.initial_value(), optimal, table.min_cost().min(f64::from(penalty)))?;
             assert_consistent(&table, &solution, true)?;
         }
     }
