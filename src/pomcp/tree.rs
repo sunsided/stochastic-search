@@ -1,6 +1,7 @@
 //! POMCP's search tree: history nodes, each with one action node per action, and action
 //! nodes with one child history per observation seen.
 
+use alloc::collections::VecDeque;
 use alloc::vec::Vec;
 
 /// The id of the root history node.
@@ -172,6 +173,74 @@ impl<O: PartialEq> Tree<O> {
         best
     }
 
+    /// The child history of the root after the action at `position` and `observation`, if
+    /// the tree has it.
+    pub(super) fn child_of_root(&self, position: usize, observation: &O) -> Option<u32> {
+        let first = self.histories[ROOT as usize].first_action as usize;
+        self.action_nodes[first + position]
+            .children
+            .iter()
+            .find(|(seen, _)| seen == observation)
+            .map(|&(_, id)| id)
+    }
+
+    /// The subtree below `root` as a tree of its own, with `root` as [`ROOT`] and history
+    /// ids renumbered breadth-first. The new root is expanded if it was not, so the tree
+    /// always has root actions.
+    pub(super) fn into_subtree(mut self, root: u32) -> Self {
+        let mut tree = Self {
+            actions: self.actions,
+            histories: Vec::new(),
+            action_nodes: Vec::new(),
+        };
+        let mut queue = VecDeque::from([root]);
+        tree.histories.push(History {
+            visits: self.histories[root as usize].visits,
+            first_action: UNEXPANDED,
+        });
+
+        let mut next = 0;
+        while let Some(old) = queue.pop_front() {
+            let new = next;
+            next += 1;
+            if !self.is_expanded(old) {
+                continue;
+            }
+
+            let first = self.histories[old as usize].first_action as usize;
+            tree.histories[new].first_action =
+                u32::try_from(tree.action_nodes.len()).expect("at most u32::MAX action nodes");
+            for index in first..first + self.actions {
+                let node = &mut self.action_nodes[index];
+                let mut children = core::mem::take(&mut node.children);
+                for (_, child) in &mut children {
+                    queue.push_back(*child);
+                    *child = tree.add_history_with(self.histories[*child as usize].visits);
+                }
+
+                tree.action_nodes.push(ActionNode {
+                    visits: node.visits,
+                    value: node.value,
+                    children,
+                });
+            }
+        }
+
+        if !tree.is_expanded(ROOT) {
+            tree.expand(ROOT);
+        }
+
+        tree
+    }
+
+    /// Adds an unexpanded history with `visits` visits and returns its id.
+    fn add_history_with(&mut self, visits: u64) -> u32 {
+        let id = self.add_history();
+        self.histories[id as usize].visits = visits;
+
+        id
+    }
+
     /// Appends an unexpanded history node and returns its id.
     fn add_history(&mut self) -> u32 {
         let id = u32::try_from(self.histories.len()).expect("at most u32::MAX histories");
@@ -216,6 +285,44 @@ mod tests {
     }
 
     /// Without any simulation, the recommendation carries no value.
+    /// The subtree keeps statistics and children, renumbered, and drops the rest.
+    #[test]
+    fn subtree_keeps_the_history_below() {
+        let mut tree: Tree<u8> = Tree::new(2);
+        let action = tree.select(ROOT, 0.0);
+        tree.record(action, 3.0);
+        let kept = tree.child(action, 7);
+        let _dropped = tree.child(action, 8);
+        tree.expand(kept);
+        let below = tree.select(kept, 0.0);
+        tree.record(below, 4.0);
+        let grandchild = tree.child(below, 1);
+        assert_eq!(tree.len(), 4);
+
+        assert_eq!(tree.child_of_root(0, &7), Some(kept));
+        assert_eq!(tree.child_of_root(0, &9), None);
+        let mut subtree = tree.into_subtree(kept);
+        assert_eq!(subtree.len(), 2);
+        assert_eq!(subtree.best_root_action(), (0, 4.0));
+        assert_eq!(subtree.child_of_root(0, &1), Some(1));
+        let _ = grandchild;
+        assert!(subtree.is_expanded(ROOT));
+        assert!(!subtree.is_expanded(1));
+        assert_eq!(subtree.select(ROOT, 0.0), 1);
+    }
+
+    /// An unexpanded history becomes an expanded root.
+    #[test]
+    fn subtree_of_a_leaf_is_expanded() {
+        let mut tree: Tree<u8> = Tree::new(2);
+        let action = tree.select(ROOT, 0.0);
+        let leaf = tree.child(action, 7);
+        let subtree = tree.into_subtree(leaf);
+
+        assert_eq!(subtree.len(), 1);
+        assert!(subtree.is_expanded(ROOT));
+    }
+
     #[test]
     fn untried_root_has_no_value() {
         let tree: Tree<u8> = Tree::new(3);

@@ -69,6 +69,12 @@ pub enum Error<S> {
     NoActions,
     /// A POMDP planner was given a belief without particles.
     EmptyBelief,
+    /// [`update_belief`](crate::update_belief()) accepted no particle: the observation is
+    /// impossible under the belief, or too rare for the attempt budget.
+    BeliefDepleted {
+        /// The steps simulated before giving up.
+        attempts: usize,
+    },
     /// A configuration setting is out of range.
     InvalidConfig {
         /// Which setting, and the valid range.
@@ -111,6 +117,10 @@ impl<S: fmt::Debug> fmt::Display for Error<S> {
             }
             Self::NoActions => f.write_str("the POMDP has no actions"),
             Self::EmptyBelief => f.write_str("the belief has no particles"),
+            Self::BeliefDepleted { attempts } => write!(
+                f,
+                "no particle matched the observation in {attempts} attempts"
+            ),
             Self::InvalidConfig { reason } => write!(f, "invalid configuration: {reason}"),
         }
     }

@@ -128,6 +128,7 @@
 
 extern crate alloc;
 
+mod belief;
 mod bounds;
 mod budget;
 mod config;
@@ -147,6 +148,7 @@ mod solution;
 mod space;
 mod value_iteration;
 
+pub use belief::{BeliefFilter, BeliefUpdate, update_belief};
 pub use bounds::brtdp::{BrtdpConfig, brtdp};
 pub use bounds::frtdp::{FrtdpConfig, frtdp};
 pub use bounds::vpi::{VpiRtdpConfig, vpi_rtdp};
@@ -159,9 +161,9 @@ pub use lao::lao_star;
 pub use lrtdp::lrtdp;
 pub use model::{Goal, Heuristic, HeuristicFn, Mdp, Zero, heuristic_fn};
 pub use observer::{Event, Observer, ObserverFn, observer_fn};
-pub use pomcp::{PomcpConfig, pomcp};
+pub use pomcp::{Pomcp, PomcpConfig, pomcp, pomcp_exploration};
 pub use pomdp::{Plan, Pomdp, RolloutPolicy, Step, UniformRandom};
-pub use rng::unit_interval;
+pub use rng::{SplitMix64, unit_interval};
 pub use rtdp::rtdp;
 pub use solution::{Solution, SolveResult, Status};
 pub use value_iteration::value_iteration;

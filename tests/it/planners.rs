@@ -7,8 +7,8 @@
 //! first-step difference in noise.
 
 use stochastic_search::{
-    DespotConfig, Error, Event, Limits, Plan, PomcpConfig, Status, UniformRandom, despot,
-    observer_fn, pomcp,
+    DespotConfig, Error, Event, Limits, Plan, Pomcp, PomcpConfig, Status, UniformRandom, despot,
+    observer_fn, pomcp, pomcp_exploration,
 };
 
 use crate::pomdps::{
@@ -453,4 +453,81 @@ fn tree_planners_report_progress_without_changing_the_plan() {
     assert_eq!(observed.value.to_bits(), plain.value.to_bits());
     assert_eq!(gaps.len(), 3);
     assert!(gaps.windows(2).all(|pair| pair[1] <= pair[0] + 1e-9));
+}
+
+/// A kept planner reuses the subtree after listening and hearing the tiger on the left.
+/// With no or one net "left" observation, listening is clearly best (the belief is at most
+/// 0.85 sure); after three, opening the right door is (see
+/// [`pomcp_opens_the_far_door_when_confident`]). After two, the two are close, so that
+/// decision is not checked. An unseen observation starts over with a fresh tree.
+#[test]
+fn pomcp_reuses_its_tree_between_decisions() {
+    for seed in SEEDS {
+        let mut planner =
+            Pomcp::new(&Tiger, AlwaysListen, pomcp_config(seed, 110.0, 20_000)).expect("valid");
+        let mut belief = tiger_belief(1, 2);
+        for heard in 0..3 {
+            if heard < 2 {
+                let plan = planner.plan(&belief).expect("valid input");
+                assert_eq!(
+                    plan.action,
+                    TigerAction::Listen,
+                    "seed {seed}, step {heard}"
+                );
+                assert!(planner.advance(&TigerAction::Listen, &Some(true)));
+                assert!(planner.tree_size() > 1, "the subtree is kept");
+            } else {
+                planner.advance(&TigerAction::Listen, &Some(true));
+            }
+
+            // The exact posterior after one more "left": odds times 0.85 / 0.15.
+            let left = belief.iter().filter(|&&l| l).count() * 85;
+            let right = (belief.len() - belief.iter().filter(|&&l| l).count()) * 15;
+            belief = tiger_belief(left, left + right);
+        }
+
+        let plan = planner.plan(&belief).expect("valid input");
+        assert_eq!(plan.action, TigerAction::OpenRight, "seed {seed}");
+    }
+
+    let mut planner = Pomcp::new(&Tiger, AlwaysListen, pomcp_config(0, 110.0, 100)).expect("valid");
+    planner.plan(&tiger_belief(1, 2)).expect("valid input");
+    assert!(!planner.advance(&TigerAction::OpenLeft, &Some(true)));
+    assert_eq!(planner.tree_size(), 1);
+}
+
+/// The paper's exploration constant, measured on Tiger, keeps the known first action, and
+/// the reward-range bound is the closed form.
+#[test]
+fn pomcp_exploration_constants() {
+    for seed in SEEDS {
+        let base = pomcp_config(seed, 0.0, 20_000);
+        let c = pomcp_exploration(&Tiger, &tiger_belief(1, 2), AlwaysListen, &base, 1_000)
+            .expect("valid input");
+        assert!(c > 0.0 && c.is_finite(), "seed {seed}: {c}");
+
+        let plan = pomcp(
+            &Tiger,
+            &tiger_belief(1, 2),
+            AlwaysListen,
+            PomcpConfig {
+                exploration: c,
+                ..base
+            },
+        )
+        .expect("valid input");
+        assert_eq!(plan.action, TigerAction::Listen, "seed {seed}");
+    }
+
+    let config = PomcpConfig {
+        discount: 0.5,
+        max_depth: 3,
+        ..PomcpConfig::default()
+    }
+    .with_reward_range(-100.0, 10.0);
+    assert!((config.exploration - 110.0 * 1.75).abs() < 1e-12);
+    assert!(matches!(
+        pomcp_exploration(&Tiger, &tiger_belief(1, 2), AlwaysListen, &config, 0),
+        Err(Error::InvalidConfig { .. })
+    ));
 }

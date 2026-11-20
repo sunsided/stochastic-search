@@ -12,16 +12,27 @@ use rand_core::Rng;
 /// The `SplitMix64` generator (Steele, Lea and Flood 2014).
 ///
 /// Fast, with a full `2^64` period and good equidistribution for sampling. Not
-/// cryptographically secure, which sampling does not need.
+/// cryptographically secure, which sampling does not need. Public so that callers of
+/// [`update_belief`](crate::update_belief()) and of [`Pomdp::step`](crate::Pomdp::step) can
+/// use the same reproducible sequence as the planners; it implements `rand_core`'s
+/// generator traits.
+///
+/// ```
+/// use stochastic_search::{SplitMix64, unit_interval};
+///
+/// let mut rng = SplitMix64::new(7);
+/// assert!((0.0..1.0).contains(&unit_interval(&mut rng)));
+/// ```
 #[derive(Debug, Clone)]
-pub(crate) struct SplitMix64 {
+pub struct SplitMix64 {
     /// The generator state, advanced by a fixed odd increment per draw.
     state: u64,
 }
 
 impl SplitMix64 {
     /// Creates a generator from a seed. Every seed, including `0`, is valid.
-    pub(crate) const fn new(seed: u64) -> Self {
+    #[must_use]
+    pub const fn new(seed: u64) -> Self {
         Self { state: seed }
     }
 

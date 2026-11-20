@@ -85,6 +85,37 @@ impl Default for PomcpConfig {
 }
 
 impl<B, O> PomcpConfig<B, O> {
+    /// Returns the same configuration with the exploration constant set to the largest
+    /// possible spread of discounted returns when every reward lies in `[min, max]`:
+    /// `(max - min) * (1 + gamma + ... + gamma^(D - 1))` for discount `gamma` and depth `D`.
+    ///
+    /// The paper's rule, [`pomcp_exploration`], measures the spread instead and is usually
+    /// smaller; this bound needs no simulations. A reversed or non-finite range gives an
+    /// exploration constant that [`pomcp`] rejects.
+    ///
+    /// ```
+    /// use stochastic_search::PomcpConfig;
+    ///
+    /// // Tiger: rewards from -100 to 10, two steps, no discounting.
+    /// let config = PomcpConfig { discount: 1.0, max_depth: 2, ..PomcpConfig::default() }
+    ///     .with_reward_range(-100.0, 10.0);
+    /// assert_eq!(config.exploration, 220.0);
+    /// ```
+    #[must_use]
+    pub fn with_reward_range(self, min: f64, max: f64) -> Self {
+        let depth = u32::try_from(self.max_depth).map_or(f64::from(u32::MAX), f64::from);
+        let horizon = if self.discount < 1.0 {
+            (1.0 - libm::pow(self.discount, depth)) / (1.0 - self.discount)
+        } else {
+            depth
+        };
+
+        Self {
+            exploration: (max - min) * horizon,
+            ..self
+        }
+    }
+
     /// Returns the same configuration with another budget.
     #[must_use]
     pub fn with_budget<B2: Budget<TreeStats>>(self, budget: B2) -> PomcpConfig<B2, O> {
@@ -158,8 +189,9 @@ impl<B, O> PomcpConfig<B, O> {
 /// `belief`. POMCP has no stopping rule: it runs until the budget is exhausted and reports
 /// [`Status::BudgetExhausted`].
 ///
-/// This is the one-shot planning step. Belief tracking between decisions (POMCP's particle
-/// filter in the tree) is up to the caller: pass the posterior particles to the next call.
+/// This is the one-shot planning step. To plan a sequence of decisions, keep a [`Pomcp`]
+/// planner, which reuses its tree, and track the belief with
+/// [`update_belief`](crate::update_belief()).
 ///
 /// # Errors
 ///
@@ -219,40 +251,151 @@ where
     B: Budget<TreeStats>,
     O: Observer,
 {
-    config.validate()?;
-    if belief.is_empty() {
-        return Err(Error::EmptyBelief);
-    }
-
-    let actions = collect_actions(pomdp)?;
-    let mut search = Search {
-        pomdp,
-        tree: Tree::new(actions.len()),
-        actions,
-        rollout,
-        rng: SplitMix64::new(config.seed),
-        discount: config.discount,
-        exploration: config.exploration,
-        max_depth: config.max_depth,
-        budget: config.budget,
-        observer: config.observer,
-        progress_interval: config.progress_interval,
-        stats: TreeStats::default(),
-        path: Vec::new(),
-    };
-
-    while !search.exhausted() {
-        search.stats.simulations += 1;
-        let particle = belief[below(&mut search.rng, belief.len())].clone();
-        search.simulate(particle)?;
-        search.report_progress();
-    }
-
-    Ok(search.recommend())
+    Pomcp::new(pomdp, rollout, config)?.plan(belief)
 }
 
-/// The state of one [`pomcp`] call.
-struct Search<'a, P: Pomdp, R, B, O> {
+/// The paper's exploration constant `c = R_hi - R_lo` for [`PomcpConfig::exploration`]:
+/// runs `simulations` simulations of POMCP from `belief` with `c = 0` and returns the highest
+/// discounted return of a simulation minus the lowest discounted return of a rollout
+/// (Silver and Veness 2010, Section 6: "`R_hi` was the highest return achieved during
+/// sample runs of POMCP with `c = 0`, and `R_lo` was the lowest return achieved during
+/// sample rollouts").
+///
+/// Uses `config` for everything but the exploration constant, budget and observer. If no
+/// rollout ran (every simulation ended in the tree), `R_lo` is the lowest simulation
+/// return instead. The result is finite and non-negative.
+///
+/// See also [`PomcpConfig::with_reward_range`], which needs no simulations but only bounds
+/// the spread of returns from per-step rewards.
+///
+/// # Errors
+///
+/// As for [`pomcp`], and [`Error::InvalidConfig`] for zero `simulations`.
+///
+/// # Example
+///
+/// ```
+/// # use rand_core::Rng;
+/// # use stochastic_search::{Pomdp, Step, unit_interval};
+/// # struct Coin;
+/// # impl Pomdp for Coin {
+/// #     type State = bool;
+/// #     type Action = &'static str;
+/// #     type Observation = Option<bool>;
+/// #     fn actions(&self, mut emit: impl FnMut(&'static str)) { emit("peek"); emit("heads"); emit("tails"); }
+/// #     fn step<R: Rng + ?Sized>(&self, heads: &bool, action: &&'static str, rng: &mut R)
+/// #         -> Step<bool, Option<bool>> {
+/// #         if *action == "peek" {
+/// #             let truthful = unit_interval(rng) < 0.9;
+/// #             Step::new(*heads, Some(*heads == truthful), -1.0)
+/// #         } else {
+/// #             let right = *heads == (*action == "heads");
+/// #             Step::new(*heads, None, if right { 10.0 } else { -10.0 }).terminal()
+/// #         }
+/// #     }
+/// # }
+/// use stochastic_search::{PomcpConfig, UniformRandom, pomcp, pomcp_exploration};
+///
+/// let base = PomcpConfig::default();
+/// let c = pomcp_exploration(&Coin, &[true, false], UniformRandom, &base, 1_000)?;
+/// assert!(c > 0.0);
+///
+/// let plan = pomcp(&Coin, &[true, false], UniformRandom, PomcpConfig { exploration: c, ..base })?;
+/// assert_eq!(plan.action, "peek");
+/// # Ok::<(), stochastic_search::Error<bool>>(())
+/// ```
+pub fn pomcp_exploration<P, R, B, O>(
+    pomdp: &P,
+    belief: &[P::State],
+    rollout: R,
+    config: &PomcpConfig<B, O>,
+    simulations: u64,
+) -> Result<f64, Error<P::State>>
+where
+    P: Pomdp,
+    P::State: Clone,
+    P::Action: Clone,
+    P::Observation: PartialEq,
+    R: RolloutPolicy<P::State>,
+{
+    if simulations == 0 {
+        return Err(Error::InvalidConfig {
+            reason: "pomcp_exploration needs at least one simulation",
+        });
+    }
+
+    let config = PomcpConfig {
+        discount: config.discount,
+        exploration: 0.0,
+        max_depth: config.max_depth,
+        seed: config.seed,
+        budget: Limits {
+            max_trials: Some(simulations),
+            ..PomcpConfig::DEFAULT_LIMITS
+        },
+        observer: (),
+        progress_interval: None,
+    };
+    let mut planner = Pomcp::new(pomdp, rollout, config)?;
+    planner.plan(belief)?;
+    let returns = planner.returns;
+    let lowest = if returns.lowest_rollout.is_finite() {
+        returns.lowest_rollout
+    } else {
+        returns.lowest
+    };
+
+    Ok((returns.highest - lowest).max(0.0))
+}
+
+/// A POMCP planner that keeps its search tree between decisions.
+///
+/// [`pomcp`] is one [`Pomcp::plan`] on a fresh planner. Keeping the planner lets
+/// [`Pomcp::advance`] reuse the subtree of the action taken and the observation received,
+/// as the paper does ("the node `T(h a o)` becomes the root of the new search tree"); the
+/// next [`Pomcp::plan`] continues from its statistics. The simulation generator also
+/// carries over, so a sequence of calls is reproducible from [`PomcpConfig::seed`].
+///
+/// The belief for the next call is the caller's: track it with
+/// [`update_belief`](crate::update_belief()) (the paper's particle filter with
+/// reinvigoration), from the same action and observation.
+///
+/// # Example
+///
+/// ```
+/// # use rand_core::Rng;
+/// # use stochastic_search::{Pomdp, Step, unit_interval};
+/// # struct Coin;
+/// # impl Pomdp for Coin {
+/// #     type State = bool;
+/// #     type Action = &'static str;
+/// #     type Observation = Option<bool>;
+/// #     fn actions(&self, mut emit: impl FnMut(&'static str)) { emit("peek"); emit("heads"); emit("tails"); }
+/// #     fn step<R: Rng + ?Sized>(&self, heads: &bool, action: &&'static str, rng: &mut R)
+/// #         -> Step<bool, Option<bool>> {
+/// #         if *action == "peek" {
+/// #             let truthful = unit_interval(rng) < 0.9;
+/// #             Step::new(*heads, Some(*heads == truthful), -1.0)
+/// #         } else {
+/// #             let right = *heads == (*action == "heads");
+/// #             Step::new(*heads, None, if right { 10.0 } else { -10.0 }).terminal()
+/// #         }
+/// #     }
+/// # }
+/// use stochastic_search::{Pomcp, PomcpConfig, UniformRandom};
+///
+/// let config = PomcpConfig { exploration: 20.0, ..PomcpConfig::default() };
+/// let mut planner = Pomcp::new(&Coin, UniformRandom, config)?;
+/// let plan = planner.plan(&[true, false])?;
+/// assert_eq!(plan.action, "peek");
+///
+/// // Peeked and saw heads: keep the subtree below ("peek", Some(true)).
+/// assert!(planner.advance(&"peek", &Some(true)));
+/// let plan = planner.plan(&[true, true, true, false])?;
+/// assert_eq!(plan.action, "heads");
+/// # Ok::<(), stochastic_search::Error<bool>>(())
+/// ```
+pub struct Pomcp<'a, P: Pomdp, R, B = Limits, O = ()> {
     /// The model.
     pomdp: &'a P,
     /// The actions, in emission order.
@@ -279,9 +422,33 @@ struct Search<'a, P: Pomdp, R, B, O> {
     stats: TreeStats,
     /// Reused buffer: the action nodes of the current simulation and their rewards.
     path: Vec<(u32, f64)>,
+    /// The extreme returns seen, for [`pomcp_exploration`].
+    returns: Returns,
 }
 
-impl<P, R, B, O> Search<'_, P, R, B, O>
+/// The extreme returns of a planner's simulations: the paper's `R_hi` and `R_lo`.
+#[derive(Debug, Clone, Copy)]
+struct Returns {
+    /// The highest discounted return of a whole simulation, from the root.
+    highest: f64,
+    /// The lowest discounted return of a rollout, from where it started.
+    lowest_rollout: f64,
+    /// The lowest discounted return of a whole simulation, the fallback for `R_lo` when
+    /// no rollout ran.
+    lowest: f64,
+}
+
+impl Default for Returns {
+    fn default() -> Self {
+        Self {
+            highest: f64::NEG_INFINITY,
+            lowest_rollout: f64::INFINITY,
+            lowest: f64::INFINITY,
+        }
+    }
+}
+
+impl<'a, P, R, B, O> Pomcp<'a, P, R, B, O>
 where
     P: Pomdp,
     P::State: Clone,
@@ -291,6 +458,94 @@ where
     B: Budget<TreeStats>,
     O: Observer,
 {
+    /// Sets up a planner with an empty tree.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::InvalidConfig`] for an invalid configuration and
+    /// [`Error::NoActions`] if the POMDP has no actions.
+    pub fn new(
+        pomdp: &'a P,
+        rollout: R,
+        config: PomcpConfig<B, O>,
+    ) -> Result<Self, Error<P::State>> {
+        config.validate()?;
+        let actions = collect_actions(pomdp)?;
+
+        Ok(Self {
+            pomdp,
+            tree: Tree::new(actions.len()),
+            actions,
+            rollout,
+            rng: SplitMix64::new(config.seed),
+            discount: config.discount,
+            exploration: config.exploration,
+            max_depth: config.max_depth,
+            budget: config.budget,
+            observer: config.observer,
+            progress_interval: config.progress_interval,
+            stats: TreeStats::default(),
+            path: Vec::new(),
+            returns: Returns::default(),
+        })
+    }
+
+    /// Runs simulations from particles of `belief` until the budget is exhausted, and
+    /// recommends an action as [`pomcp`] does. Continues the current tree: after
+    /// [`Pomcp::advance`], from the reused subtree.
+    ///
+    /// The counters of the returned [`Plan`] count this call only, except
+    /// [`TreeStats::nodes`], the size of the whole tree; the budget sees the same counters,
+    /// so a [`Limits`] budget applies per call.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::EmptyBelief`] for an empty `belief` and [`Error::InvalidReward`] if
+    /// a sampled reward is not finite.
+    ///
+    /// # Panics
+    ///
+    /// Panics if more than `u32::MAX` tree nodes are stored.
+    pub fn plan(&mut self, belief: &[P::State]) -> Result<Plan<P::Action>, Error<P::State>> {
+        if belief.is_empty() {
+            return Err(Error::EmptyBelief);
+        }
+
+        self.stats = TreeStats::default();
+        while !self.exhausted() {
+            self.stats.simulations += 1;
+            let particle = belief[below(&mut self.rng, belief.len())].clone();
+            self.simulate(particle)?;
+            self.report_progress();
+        }
+
+        Ok(self.recommend())
+    }
+
+    /// Makes the history after `action` and `observation` the new root, keeping its subtree
+    /// and dropping everything else. Returns `false` (and starts over with an empty tree) if
+    /// the tree never saw that history, or `action` is not one of the POMDP's actions.
+    pub fn advance(&mut self, action: &P::Action, observation: &P::Observation) -> bool
+    where
+        P::Action: PartialEq,
+    {
+        let position = self.actions.iter().position(|known| known == action);
+        let tree = core::mem::replace(&mut self.tree, Tree::new(self.actions.len()));
+        match position.and_then(|position| tree.child_of_root(position, observation)) {
+            Some(child) => {
+                self.tree = tree.into_subtree(child);
+                true
+            }
+            None => false,
+        }
+    }
+
+    /// The number of history nodes in the tree.
+    #[must_use]
+    pub fn tree_size(&self) -> usize {
+        self.tree.len()
+    }
+
     /// Emits [`Event::TreeProgress`] if one is due after the current simulation.
     fn report_progress(&mut self) {
         let due = self
@@ -385,6 +640,8 @@ where
             state = step.state;
         }
 
+        self.returns.lowest_rollout = self.returns.lowest_rollout.min(total);
+
         Ok(total)
     }
 
@@ -397,10 +654,13 @@ where
             self.tree.record(action, value);
             self.stats.backups += 1;
         }
+
+        self.returns.highest = self.returns.highest.max(value);
+        self.returns.lowest = self.returns.lowest.min(value);
     }
 
     /// The root action with the highest average return, ties to the first emitted.
-    fn recommend(mut self) -> Plan<P::Action> {
+    fn recommend(&mut self) -> Plan<P::Action> {
         let (position, value) = self.tree.best_root_action();
         self.stats.nodes = self.tree.len() as u64;
 
