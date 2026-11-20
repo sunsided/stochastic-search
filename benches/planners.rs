@@ -1,14 +1,15 @@
 //! Benchmarks for the hot paths: LRTDP trials on a corridor SSP, LRTDP against the bounded
-//! RTDP variants on a noisy corridor, and POMCP simulations and
-//! DESPOT explorations on Tiger.
+//! RTDP variants on a noisy corridor, LAO* against iLAO* and CG-iLAO*, POMCP simulations
+//! and DESPOT explorations on Tiger, tree reuse between decisions, and the particle filter.
 
 use std::hint::black_box;
 
 use criterion::Criterion;
 use rand_core::Rng;
 use stochastic_search::{
-    BrtdpConfig, Config, DespotConfig, FrtdpConfig, Limits, Mdp, PomcpConfig, Pomdp, RolloutPolicy,
-    Step, VpiRtdpConfig, Zero, brtdp, despot, frtdp, heuristic_fn, lrtdp, pomcp, unit_interval,
+    BeliefFilter, BrtdpConfig, Config, Despot, DespotConfig, FrtdpConfig, Limits, Mdp, Pomcp,
+    PomcpConfig, Pomdp, RolloutPolicy, SplitMix64, Step, VpiRtdpConfig, Zero, brtdp, cg_ilao_star,
+    despot, frtdp, heuristic_fn, ilao_star, lao_star, lrtdp, pomcp, unit_interval, update_belief,
     vpi_rtdp,
 };
 
@@ -18,8 +19,11 @@ fn main() {
 
     bench_lrtdp(&mut criterion);
     bench_bounded(&mut criterion);
+    bench_lao(&mut criterion);
     bench_pomcp(&mut criterion);
     bench_despot(&mut criterion);
+    bench_reuse(&mut criterion);
+    bench_belief(&mut criterion);
     criterion.final_summary();
 }
 
@@ -148,6 +152,115 @@ impl Pomdp for Tiger {
 
         Step::new(unit_interval(rng) < 0.5, None, reward)
     }
+}
+
+/// Classic LAO*, iLAO* and CG-iLAO* on the noisy corridor with the blind heuristic.
+fn bench_lao(criterion: &mut Criterion) {
+    let goal = |state: &u32| *state == 200;
+    let mut group = criterion.benchmark_group("noisy corridor 200, solution graphs");
+    group.bench_function("lao*", |bencher| {
+        bencher.iter(|| {
+            let solution = lao_star(&NoisyCorridor, 0, &goal, Zero, Config::default());
+            black_box(solution.expect("valid input").initial_value())
+        });
+    });
+    group.bench_function("ilao*", |bencher| {
+        bencher.iter(|| {
+            let solution = ilao_star(&NoisyCorridor, 0, &goal, Zero, Config::default());
+            black_box(solution.expect("valid input").initial_value())
+        });
+    });
+    group.bench_function("cg-ilao*", |bencher| {
+        bencher.iter(|| {
+            let solution = cg_ilao_star(&NoisyCorridor, 0, &goal, Zero, Config::default());
+            black_box(solution.expect("valid input").initial_value())
+        });
+    });
+    group.finish();
+}
+
+/// Two Tiger decisions (listen, hear left) with 5 000 simulations or 100 explorations each:
+/// with the tree kept by `advance`, and with a fresh planner for the second decision.
+fn bench_reuse(criterion: &mut Criterion) {
+    let pomcp_config = PomcpConfig::default()
+        .with_exploration(110.0)
+        .with_max_depth(60)
+        .with_budget(Limits {
+            max_trials: Some(5_000),
+            ..PomcpConfig::DEFAULT_LIMITS
+        });
+    let despot_config = DespotConfig::default()
+        .with_scenarios(200)
+        .with_max_depth(40)
+        .with_budget(Limits {
+            max_trials: Some(100),
+            ..DespotConfig::DEFAULT_LIMITS
+        });
+    let heard_left = [true, true, true, true, true, true, false];
+
+    let mut group = criterion.benchmark_group("tiger two decisions");
+    group.bench_function("pomcp kept tree", |bencher| {
+        bencher.iter(|| {
+            let mut planner = Pomcp::new(&Tiger, Listen, pomcp_config).expect("valid");
+            planner.plan(&[true, false]).expect("valid");
+            planner.advance(&0, &Some(true));
+            black_box(planner.plan(&heard_left).expect("valid").value)
+        });
+    });
+    group.bench_function("pomcp fresh tree", |bencher| {
+        bencher.iter(|| {
+            let mut planner = Pomcp::new(&Tiger, Listen, pomcp_config).expect("valid");
+            planner.plan(&[true, false]).expect("valid");
+            let mut planner = Pomcp::new(&Tiger, Listen, pomcp_config).expect("valid");
+            black_box(planner.plan(&heard_left).expect("valid").value)
+        });
+    });
+    group.bench_function("despot kept tree", |bencher| {
+        bencher.iter(|| {
+            let upper = |_: &bool| 200.0;
+            let mut planner =
+                Despot::new(&Tiger, &[true, false], Listen, upper, despot_config).expect("valid");
+            planner.plan().expect("valid");
+            planner.advance(&0, &Some(true)).expect("a seen history");
+            black_box(planner.plan().expect("valid").value)
+        });
+    });
+    group.bench_function("despot fresh tree", |bencher| {
+        bencher.iter(|| {
+            let upper = |_: &bool| 200.0;
+            let mut planner =
+                Despot::new(&Tiger, &[true, false], Listen, upper, despot_config).expect("valid");
+            planner.plan().expect("valid");
+            let mut planner =
+                Despot::new(&Tiger, &heard_left, Listen, upper, despot_config).expect("valid");
+            black_box(planner.plan().expect("valid").value)
+        });
+    });
+    group.finish();
+}
+
+/// The particle filter: 10 000 particles after listening and hearing the tiger on the left.
+fn bench_belief(criterion: &mut Criterion) {
+    let belief: Vec<bool> = (0..10_000).map(|i| i % 2 == 0).collect();
+    let filter = BeliefFilter::default()
+        .with_particles(10_000)
+        .with_reinvigorate(500);
+    criterion.bench_function("update_belief tiger 10k particles", |bencher| {
+        let mut rng = SplitMix64::new(0);
+        bencher.iter(|| {
+            let update = update_belief(
+                &Tiger,
+                &belief,
+                &0,
+                &Some(true),
+                filter,
+                &mut rng,
+                |s, _| *s,
+            )
+            .expect("the observation is possible");
+            black_box(update.particles.len())
+        });
+    });
 }
 
 /// The usual Tiger rollout policy: always listen.
