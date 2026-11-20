@@ -232,6 +232,33 @@ fn despot_checks_an_uncertain_rock() {
         .expect("valid input");
 
         assert_eq!(plan.action, RockAction::Check(0), "seed {seed}");
+        assert!(
+            (plan.value - 13.1).abs() < 0.6,
+            "seed {seed}: {}",
+            plan.value
+        );
+    }
+}
+
+/// On a rock known to be good, sampling at once and heading east earns
+/// `10 + 10 * gamma^3 = 18.57`; checking first only delays it. The scenarios are
+/// deterministic, so DESPOT closes the gap and reports that value exactly.
+#[test]
+fn despot_samples_a_good_rock() {
+    let model = one_rock();
+    for seed in SEEDS {
+        let plan = despot(
+            &model,
+            &one_rock_belief(10, 10),
+            HeadEast,
+            rock_upper_bound,
+            despot_config(seed, 500),
+        )
+        .expect("valid input");
+
+        assert_eq!(plan.action, RockAction::Sample, "seed {seed}");
+        assert_eq!(plan.status, Status::Converged, "seed {seed}");
+        assert!((plan.value - (10.0 + 10.0 * DISCOUNT.powi(3))).abs() < 1e-9);
     }
 }
 
@@ -251,6 +278,8 @@ fn despot_leaves_a_bad_rock() {
         .expect("valid input");
 
         assert_eq!(plan.action, RockAction::East, "seed {seed}");
+        assert_eq!(plan.status, Status::Converged, "seed {seed}");
+        assert!((plan.value - 10.0 * DISCOUNT.powi(2)).abs() < 1e-9);
     }
 }
 
@@ -275,12 +304,13 @@ fn despot_with_huge_regularization_follows_the_default_policy() {
     let plan = despot(
         &Tiger,
         &tiger_belief(1, 2),
-        UniformRandom,
+        AlwaysListen,
         |_: &bool| TIGER_UPPER_BOUND,
         config,
     )
     .expect("valid input");
 
+    assert_eq!(plan.action, TigerAction::Listen);
     assert_eq!(plan.status, Status::Converged);
     assert_eq!(plan.stats.trials, 0);
     assert_eq!(plan.stats.states, 1);
@@ -322,7 +352,7 @@ fn despot_validates_its_input() {
             ..DespotConfig::default()
         },
         DespotConfig {
-            xi: 1.5,
+            xi: 1.0,
             ..DespotConfig::default()
         },
         DespotConfig {

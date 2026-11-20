@@ -13,7 +13,7 @@ pub enum DeadEnds {
     ///
     /// Exact when a proper policy exists from the initial state. If none exists, the run
     /// ends with [`Status::Unsolvable`](crate::Status::Unsolvable) (or with an exhausted
-    /// budget, if LRTDP cannot prove it in time); see [`lrtdp`](crate::lrtdp())'s
+    /// budget, if a heuristic search cannot prove it in time); see [`lrtdp`](crate::lrtdp())'s
     /// termination notes.
     #[default]
     Infinite,
@@ -58,11 +58,13 @@ pub struct Config<B = Limits, O = ()> {
     pub epsilon: f64,
     /// Dead-end semantics. Default [`DeadEnds::Infinite`].
     pub dead_ends: DeadEnds,
-    /// Seed of the successor sampler used by LRTDP trials. A seed reproduces a run exactly.
+    /// Seed of the successor sampler used by LRTDP and RTDP trials. A seed reproduces a run
+    /// exactly.
     ///
     /// Default `0`.
     pub seed: u64,
-    /// LRTDP cuts a trial off after this many steps and starts the next one. At least `1`.
+    /// LRTDP and RTDP cut a trial off after this many steps and start the next one. At
+    /// least `1`.
     ///
     /// Guards against trials that circle a dead-end trap forever. Default `10_000`.
     pub max_trial_length: usize,
@@ -78,7 +80,7 @@ pub struct Config<B = Limits, O = ()> {
     /// Emit [`Event::Progress`](crate::Event::Progress) every this many backups. `None`
     /// never emits it. Default `Some(1_000_000)`; ignored by the default observer.
     pub progress_interval: Option<u64>,
-    /// The number of consecutive LRTDP trials over which
+    /// The number of consecutive LRTDP or RTDP trials (iLAO* passes) over which
     /// [`Event::SuspectedDivergence`](crate::Event::SuspectedDivergence) looks for steady
     /// growth of the initial value. At least `1`. Default `16`; ignored by the default
     /// observer.

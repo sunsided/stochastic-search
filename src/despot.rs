@@ -50,12 +50,14 @@ pub struct DespotConfig<B = Limits> {
     /// per tree node, which trades tree size against overfitting to the scenarios. In
     /// reward units. Default `0`, as in the reference implementation.
     pub regularization: f64,
-    /// The target factor `xi` of the excess uncertainty, in `[0, 1]`: each exploration aims
-    /// to shrink the root gap to `xi` times its current size. Default `0.95`, as in the
+    /// The target factor `xi` of the excess uncertainty, in `[0, 1)`: each exploration aims
+    /// to shrink the root gap to `xi` times its current size. At `1` the root itself would
+    /// have no excess uncertainty and no exploration would leave it. Default `0.95`, as in the
     /// paper.
     pub xi: f64,
-    /// The depth `D` of the tree; nodes below it follow the default policy, and default
-    /// policy simulations stop at it. At least `1`. Default `90`, as in the paper.
+    /// The depth `D` of the tree: nodes deeper than `D` follow the default policy, and
+    /// default policy simulations take their last step at depth `D`, so every scenario
+    /// plays at most `D + 1` steps. At least `1`. Default `90`, as in the paper.
     pub max_depth: usize,
     /// Stop once the root gap `mu(b0) - ell(b0)` is at most this, finite and non-negative.
     /// Default `1e-6`.
@@ -118,8 +120,8 @@ impl<B> DespotConfig<B> {
             "scenarios must be at least 1"
         } else if !(self.regularization.is_finite() && self.regularization >= 0.0) {
             "regularization must be finite and non-negative"
-        } else if !(0.0..=1.0).contains(&self.xi) {
-            "xi must lie in [0, 1]"
+        } else if !(0.0..1.0).contains(&self.xi) {
+            "xi must lie in [0, 1)"
         } else if !(self.target_gap.is_finite() && self.target_gap >= 0.0) {
             "target_gap must be finite and non-negative"
         } else {
@@ -604,7 +606,8 @@ where
     }
 
     /// Simulates the default policy along `scenario` from `state` at `depth` until the
-    /// episode ends or the depth limit, and returns the return discounted from `depth`.
+    /// episode ends or through depth `D` (the last depth the tree steps from), and returns
+    /// the return discounted from `depth`.
     ///
     /// # Errors
     ///
@@ -617,7 +620,7 @@ where
     ) -> Result<f64, Error<P::State>> {
         let mut total = 0.0;
         let mut weight = 1.0;
-        for step_depth in depth..self.max_depth {
+        for step_depth in depth..=self.max_depth {
             let mut choice = self.stream(scenario, step_depth, true);
             let position = self.default.action(&state, self.actions.len(), &mut choice);
             let mut rng = self.stream(scenario, step_depth, false);

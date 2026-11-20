@@ -15,8 +15,9 @@ pub type SolveResult<M> =
 /// How a run ended.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Status {
-    /// The convergence criterion holds: for LRTDP, the initial state is labeled solved; for
-    /// value iteration, the last sweep's largest residual was below epsilon.
+    /// The convergence criterion holds: for LRTDP, RTDP and iLAO*, the initial state is
+    /// labeled solved by the solved check; for value iteration, the last sweep's largest
+    /// residual was below epsilon.
     Converged,
     /// The [`Budget`](crate::Budget) stopped the run first. Values and policy are the ones
     /// reached so far and carry no guarantee.
@@ -115,7 +116,7 @@ impl<S, A> Solution<S, A> {
 impl<S: Hash + Eq, A> Solution<S, A> {
     /// The value of `state`, or `None` if the run never touched it.
     ///
-    /// For LRTDP, values outside the policy's reachable states are only bounds (lower bounds
+    /// For LRTDP, RTDP and iLAO*, values outside the policy's reachable states are only bounds (lower bounds
     /// with an admissible heuristic), not converged values.
     #[must_use]
     pub fn value(&self, state: &S) -> Option<f64> {

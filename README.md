@@ -1,13 +1,13 @@
 # stochastic-search
 
-Planning under probabilistic outcomes: LAO*, iLAO*, RTDP, LRTDP, POMCP and DESPOT.
+Planning under probabilistic outcomes: iLAO*, RTDP, LRTDP, POMCP and DESPOT.
 
 ## Scope
 
 - Implemented: value iteration, RTDP, labeled RTDP (LRTDP) and iLAO* for stochastic
   shortest path problems, with infinite or finite-penalty dead ends
 - Implemented: a generative POMDP model with one-shot online planners POMCP and anytime
-  regularized DESPOT (AR-DESPOT) over particle beliefs
+  regularized DESPOT (Ye et al. 2017) over particle beliefs
 - Planned: one-tip LAO*, CG-iLAO*, Bounded RTDP; belief tracking and tree reuse between
   POMDP decisions
 

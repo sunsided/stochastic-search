@@ -16,8 +16,8 @@ pub enum Event {
         states: u64,
         /// The current value of the initial state.
         initial_value: f64,
-        /// LRTDP: the change of the initial state's value at its most recent backup. Value
-        /// iteration: the largest residual so far in the sweep in progress.
+        /// LRTDP, RTDP and iLAO*: the change of the initial state's value at its most recent
+        /// backup. Value iteration: the largest residual so far in the sweep in progress.
         residual: f64,
     },
     /// A dead-end analysis finished; `count` states were newly proven to have no proper
@@ -30,9 +30,10 @@ pub enum Event {
     /// what a value climbing a trap cycle looks like.
     ///
     /// Heuristic and not authoritative (see
-    /// [`Config::divergence_window`](crate::Config)): LRTDP checks the initial state's value
-    /// after every trial. If it rose in each of the last `divergence_window` trials and the
-    /// rise in the last trial is at least half the rise in the first trial of that window,
+    /// [`Config::divergence_window`](crate::Config)): LRTDP and RTDP check the initial
+    /// state's value after every trial, iLAO* after every pass. If it rose in each of the
+    /// last `divergence_window` checks and the rise in the last is at least half the rise in
+    /// the first of that window,
     /// the event fires and the window starts over. A solvable problem whose values climb
     /// slowly towards a large optimum, at a steady rate, triggers it too.
     SuspectedDivergence {

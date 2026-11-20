@@ -286,11 +286,11 @@ computation sits behind a compile-time constant and vanishes. Closures work thro
 policies or the status.
 
 - `Progress { backups, states, initial_value, residual }` every `Config::progress_interval`
-  backups (default `10^6`). `residual` is the initial state's last value change (LRTDP) or
-  the largest residual so far in the current sweep (value iteration).
+  backups (default `10^6`). `residual` is the initial state's last value change (LRTDP,
+  RTDP, iLAO*) or the largest residual so far in the current sweep (value iteration).
 - `DeadEndsProven { count }` after every dead-end analysis, `count` newly proven states.
-- `SuspectedDivergence { value, growth, backups }`, LRTDP only. After each trial the
-  initial value is checked. If it rose in each of the last `Config::divergence_window`
+- `SuspectedDivergence { value, growth, backups }`, LRTDP, RTDP and iLAO*. After each
+  trial (iLAO*: pass) the initial value is checked. If it rose in each of the last `Config::divergence_window`
   trials (default 16) and the last rise is at least half the first rise of that window,
   the event fires with the growth over the window, and the window starts over; a trial
   without a rise resets it. Converging runs usually rise by shrinking amounts, a trap by a
@@ -391,8 +391,8 @@ root action with the highest average, not the UCB score. The exploration constan
 scaled to the return range by the caller.
 
 DESPOT follows the anytime algorithm of Ye et al. (2017, Algorithms 1 to 6), which the
-2013 paper calls AR-DESPOT (the name is from the 2013 paper as recalled; the 2017 paper
-just says "anytime DESPOT"):
+2017 paper calls the anytime DESPOT algorithm (whether it matches the 2013 paper's
+"AR-DESPOT" is unverified):
 
 - `K` scenarios: a start state drawn from the belief, and a random stream per depth. The
   step of scenario `k` at depth `d` uses a fresh generator seeded from `(seed, k, 2d)`, the
@@ -407,6 +407,7 @@ just says "anytime DESPOT"):
 - explore: action by `mu(b, a)`, child by excess uncertainty
   `E(b) = mu - ell - |Phi_b| / K * xi * (mu(b0) - ell(b0))`; stop when `E <= 0`, at a
   pruned node, or beyond depth `D` (then `MakeDefault`: `U = L0`, `mu = ell = l0`, fixed);
+  default policy simulations take their last step at depth `D`, like the tree;
 - prune: a node is blocked if an ancestor `b'` has
   `|Phi_b'| / K * gamma^depth(b') * (U(b') - L0(b')) <= lambda * (depth - depth(b'))`;
   blocked nodes on the path are fixed to the default policy bottom-up;
