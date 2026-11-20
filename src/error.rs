@@ -36,9 +36,22 @@ pub enum Error<S> {
         /// The sum of the outcome probabilities.
         sum: f64,
     },
-    /// The heuristic estimated NaN or negative infinity, or a POMDP upper bound (see
-    /// [`despot`](crate::despot())) is NaN.
+    /// The heuristic estimated NaN or negative infinity, a POMDP upper bound (see
+    /// [`despot`](crate::despot())) is NaN, or a [`brtdp`](crate::brtdp()) upper estimate is
+    /// NaN, negative infinity or below the lower estimate of the same state.
     InvalidHeuristic {
+        /// The state that was estimated.
+        state: S,
+    },
+    /// Under [`DeadEnds::Infinite`](crate::DeadEnds::Infinite), the upper bound of
+    /// [`brtdp`](crate::brtdp()) estimated no finite value (`None` or infinity) for a state
+    /// the lower bound does not prove to be a dead end.
+    ///
+    /// BRTDP needs a finite upper bound wherever the optimal value is finite: an infinite
+    /// one on a cycle never becomes finite through backups. Give a finite upper estimate,
+    /// return `None` from the lower bound too where the state is a dead end, or use
+    /// [`DeadEnds::Penalty`](crate::DeadEnds::Penalty), whose penalty bounds every value.
+    UnboundedUpper {
         /// The state that was estimated.
         state: S,
     },
@@ -82,6 +95,12 @@ impl<S: fmt::Debug> fmt::Display for Error<S> {
                 write!(
                     f,
                     "the heuristic or bound estimated an invalid value for state {state:?}"
+                )
+            }
+            Self::UnboundedUpper { state } => {
+                write!(
+                    f,
+                    "no finite upper bound for state {state:?}, which is not a known dead end"
                 )
             }
             Self::InvalidReward { state, reward } => {

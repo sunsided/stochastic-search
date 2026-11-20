@@ -11,7 +11,7 @@ function and a greedy policy.
 In scope, in milestone order (see [Milestones](#milestones)):
 
 - reference: value iteration (VI) on the reachable state space, used as a test oracle;
-- real-time dynamic programming: RTDP, labeled RTDP (LRTDP);
+- real-time dynamic programming: RTDP, labeled RTDP (LRTDP), bounded RTDP (BRTDP);
 - AND/OR heuristic search: LAO*, improved LAO* (iLAO*), CG-iLAO*;
 - belief space: POMCP, DESPOT, over a separate generative POMDP model.
 
@@ -341,6 +341,40 @@ Implementation, on the LRTDP run (`space`, meter, dead-end proofs and events sha
   the dead-end proof catches them as in LRTDP;
 - passes count in `Stats::sweeps`.
 
+### Bounded RTDP (milestone 2)
+
+BRTDP (McMahan, Likhachev and Gordon 2005) keeps a lower bound `L` (the node value, from
+the heuristic) and an upper bound `U` (a `Vec<f64>` parallel to the node ids, so `Node`
+stays at 32 bytes) and backs up both in the same step. Trials act greedily on `L` and sample
+the successor `s'` with weight `P(s' | s, a) * (U(s') - L(s'))`; a trial ends when the total
+weight is below `(U(s0) - L(s0)) / tau`, then backs up its states in reverse. The run stops
+when `U(s0) - L(s0) <= epsilon`. `tau` is `Config::tau` (default 10, a crate choice, not
+taken from the paper).
+
+Dead ends are the obstacle: an infinite upper bound never becomes finite through backups
+on a cycle (`c + p * 0 + (1 - p) * inf = inf`), so gap-weighted sampling and the stopping
+test would be meaningless. The chosen formulation:
+
+- under `DeadEnds::Penalty(d)` (fSSPUDE), the upper estimate is capped at `d` and `None`
+  means `d`, so every upper bound is finite. `U = d` is a fixed point of the capped Bellman
+  operator, hence a monotone upper bound;
+- under `DeadEnds::Infinite`, every stored state needs a finite upper estimate unless the
+  lower heuristic proves it a dead end (`None`); otherwise the run fails with
+  `Error::UnboundedUpper` naming the state. Proven dead ends have `L = U = inf` and gap 0,
+  so trials never sample them. Since every stored state that may have a finite value has a
+  finite (valid) upper bound, no dead-end proof is needed. An avoidable dead end the lower
+  heuristic misses is rejected, not avoided; use a penalty for such problems.
+
+Invariant: `U(s) = inf` implies `L(s) = inf` (both bounds are backed up together, and an
+infinite upper Q-value needs a successor with infinite upper bound), so gaps are never
+infinite or NaN. Gaps are clamped at 0 when invalid bounds cross. Initial estimates with
+`U < L` are rejected as `Error::InvalidHeuristic`.
+
+Guarantee: with an admissible lower and a valid upper heuristic, `L <= V* <= U` on every
+stored state at any time, converged or not. The policy is greedy on `U` at each state's
+last backup; with a monotone `U` (which backups preserve) it satisfies
+`U(s) >= Q_U(s, pi(s))`. The trial follows the `L`-greedy action, as in the paper.
+
 ### CG-iLAO* (milestone 3)
 
 CG-iLAO* (Schmalz and Trevizan 2024) restricts each backup to the actions that can still be
@@ -451,6 +485,11 @@ overestimates are allowed (they only void the optimality bound). Neither panics.
   - epsilon-consistency on the policy envelope (full residual with a consistent heuristic,
     policy residual with any);
   - two runs with the same seed give identical values, policies and statistics.
+  - BRTDP brackets `V*` (value iteration from every state) with `L <= V* <= U` on every
+    stored state, converged or cut off by a small budget, under infinite dead ends (blind
+    or determinization lower bound, the always-action-0 policy value plus 1 as upper
+    bound, with avoidable traps proven by the determinization) and under a penalty (no
+    upper estimate); converged runs have a gap of at most epsilon at `s0`.
 - Robustness: overestimating, negative, `Some(inf)`, false `None` and NaN heuristics under
   a budget; no panic, no hang, NaN reported as an error; the frozen-policy residual holds
   for any heuristic.
@@ -469,8 +508,8 @@ overestimates are allowed (they only void the optimality bound). Neither panics.
 ## Milestones
 
 1. Model traits, explicit state space, value iteration, LRTDP, tests. (this draft)
-2. Plain RTDP and iLAO*, sharing `space` and the LRTDP run. (done) Bounded RTDP or FRTDP
-   as upper-bound variants if a consumer needs an anytime gap; one-tip LAO*.
+2. Plain RTDP and iLAO*, sharing `space` and the LRTDP run. (done) Bounded RTDP with
+   finite upper bounds (done). FRTDP and one-tip LAO*.
 3. CG-iLAO*; policy evaluation utilities (exact evaluation of a fixed policy by linear
    solve or iteration); discounted MDP adapter.
 4. Belief-space trait set; POMCP; DESPOT. (done, one-shot) Next: belief tracking and tree
@@ -505,6 +544,8 @@ overestimates are allowed (they only void the optimality bound). Neither panics.
   loops.* Artificial Intelligence 129, 2001.
 - Schmalz, Trevizan. *Efficient constraint generation for stochastic shortest path
   problems.* AAAI 2024. (Venue and details to verify before milestone 3.)
+- McMahan, Likhachev, Gordon. *Bounded real-time dynamic programming: RTDP with monotone
+  upper bounds and performance guarantees.* ICML 2005.
 - Kolobov, Mausam, Weld. *A theory of goal-oriented MDPs with dead ends.* UAI 2012.
 - Silver, Veness. *Monte-Carlo planning in large POMDPs.* NeurIPS 2010.
 - Somani, Ye, Hsu, Lee. *DESPOT: Online POMDP planning with regularization.* NeurIPS 2013.

@@ -58,13 +58,13 @@ pub struct Config<B = Limits, O = ()> {
     pub epsilon: f64,
     /// Dead-end semantics. Default [`DeadEnds::Infinite`].
     pub dead_ends: DeadEnds,
-    /// Seed of the successor sampler used by LRTDP and RTDP trials. A seed reproduces a run
+    /// Seed of the successor sampler used by LRTDP, RTDP and BRTDP trials. A seed reproduces a run
     /// exactly.
     ///
     /// Default `0`.
     pub seed: u64,
-    /// LRTDP and RTDP cut a trial off after this many steps and start the next one. At
-    /// least `1`.
+    /// LRTDP, RTDP and BRTDP cut a trial off after this many steps and start the next one.
+    /// At least `1`.
     ///
     /// Guards against trials that circle a dead-end trap forever. Default `10_000`.
     pub max_trial_length: usize,
@@ -85,6 +85,12 @@ pub struct Config<B = Limits, O = ()> {
     /// growth of the initial value. At least `1`. Default `16`; ignored by the default
     /// observer.
     pub divergence_window: usize,
+    /// BRTDP's trial-end ratio `tau`: a [`brtdp`](crate::brtdp()) trial ends once the
+    /// expected bound gap of the next state falls below the initial state's gap divided by
+    /// `tau`. Finite and greater than `1`; larger values make trials longer.
+    ///
+    /// Default `10`, a choice of this crate. Ignored by the other algorithms.
+    pub tau: f64,
 }
 
 impl Default for Config {
@@ -98,6 +104,7 @@ impl Default for Config {
             observer: (),
             progress_interval: Some(1_000_000),
             divergence_window: 16,
+            tau: 10.0,
         }
     }
 }
@@ -115,6 +122,7 @@ impl<B, O> Config<B, O> {
             observer: self.observer,
             progress_interval: self.progress_interval,
             divergence_window: self.divergence_window,
+            tau: self.tau,
         }
     }
 
@@ -130,6 +138,7 @@ impl<B, O> Config<B, O> {
             observer,
             progress_interval: self.progress_interval,
             divergence_window: self.divergence_window,
+            tau: self.tau,
         }
     }
 
@@ -139,7 +148,8 @@ impl<B, O> Config<B, O> {
     ///
     /// Returns [`Error::InvalidConfig`] for an epsilon that is not finite and positive, a
     /// penalty that is not finite and non-negative, a zero trial length, a zero progress
-    /// interval or a zero divergence window.
+    /// interval, a zero divergence window, or a `tau` that is not finite and greater than
+    /// `1`.
     pub(crate) fn validate<S>(&self) -> Result<(), Error<S>> {
         if !(self.epsilon.is_finite() && self.epsilon > 0.0) {
             return Err(Error::InvalidConfig {
@@ -157,6 +167,12 @@ impl<B, O> Config<B, O> {
         if self.progress_interval == Some(0) || self.divergence_window == 0 {
             return Err(Error::InvalidConfig {
                 reason: "progress_interval and divergence_window must be at least 1",
+            });
+        }
+
+        if !(self.tau.is_finite() && self.tau > 1.0) {
+            return Err(Error::InvalidConfig {
+                reason: "tau must be finite and greater than 1",
             });
         }
 

@@ -14,12 +14,13 @@ pub(crate) struct Backup {
 }
 
 impl<S, A> Space<S, A> {
-    /// The Q-value of an action: its cost plus the expected value of its successors.
-    fn q_value(&self, index: u32, entry: &ActionEntry<A>) -> f64 {
+    /// The Q-value of an action under `value`: its cost plus the expected value of its
+    /// successors.
+    fn q_value(&self, index: u32, entry: &ActionEntry<A>, value: impl Fn(Id) -> f64) -> f64 {
         let expected: f64 = self
             .outcomes(index)
             .iter()
-            .map(|outcome| outcome.probability * self.node(outcome.target).value)
+            .map(|outcome| outcome.probability * value(outcome.target))
             .sum();
 
         entry.cost + expected
@@ -30,10 +31,15 @@ impl<S, A> Space<S, A> {
     /// Goals and proven dead ends keep their value. An unexpanded open state is treated as
     /// having no actions, so callers expand first. Ties go to the action emitted first.
     pub(crate) fn bellman(&self, id: Id) -> Backup {
-        let node = self.node(id);
-        if node.kind != Kind::Open {
+        self.bellman_under(id, |state| self.node(state).value)
+    }
+
+    /// Evaluates the Bellman equation at `id` under another value function, `value`, with
+    /// the rules of [`Space::bellman`]. BRTDP uses it for its upper bound.
+    pub(crate) fn bellman_under(&self, id: Id, value: impl Fn(Id) -> f64) -> Backup {
+        if self.node(id).kind != Kind::Open {
             return Backup {
-                value: node.value,
+                value: value(id),
                 policy: None,
             };
         }
@@ -41,7 +47,7 @@ impl<S, A> Space<S, A> {
         let mut best = f64::INFINITY;
         let mut policy = None;
         for (index, entry) in self.actions_of(id) {
-            let q = self.q_value(index, entry);
+            let q = self.q_value(index, entry, &value);
             if q < best {
                 best = q;
                 policy = Some(index);

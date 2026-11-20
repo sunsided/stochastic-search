@@ -7,7 +7,7 @@ pub struct Stats {
     /// evaluate the Bellman equation; those evaluations count here too, since they cost the
     /// same.
     pub backups: u64,
-    /// LRTDP and RTDP trials started. Always `0` for value iteration and iLAO*.
+    /// LRTDP, RTDP and BRTDP trials started. Always `0` for value iteration and iLAO*.
     pub trials: u64,
     /// Value iteration sweeps over the state space, or iLAO* passes over the greedy graph.
     /// Always `0` for LRTDP and RTDP.
@@ -20,7 +20,7 @@ pub struct Stats {
 
 /// Decides when a run must stop before it converges.
 ///
-/// Asked before every Bellman backup, every LRTDP or RTDP trial, every iLAO* pass and every
+/// Asked before every Bellman backup, every LRTDP, RTDP or BRTDP trial, every iLAO* pass and every
 /// state expansion of value
 /// iteration's enumeration, with the counters so far, so a run
 /// stopped by [`Limits::max_backups`] `= n` has performed exactly `n` backups. Implemented for
@@ -66,7 +66,7 @@ impl<F: FnMut(&Stats) -> bool> Budget for F {
 pub struct Limits {
     /// Stop once this many Bellman backups have been performed. `None` is unbounded.
     pub max_backups: Option<u64>,
-    /// Stop once this many LRTDP or RTDP trials have been started. `None` is unbounded.
+    /// Stop once this many LRTDP, RTDP or BRTDP trials have been started. `None` is unbounded.
     pub max_trials: Option<u64>,
     /// Stop once this many states are stored. `None` is unbounded.
     ///

@@ -18,6 +18,7 @@ pub enum Event {
         initial_value: f64,
         /// LRTDP, RTDP and iLAO*: the change of the initial state's value at its most recent
         /// backup. Value iteration: the largest residual so far in the sweep in progress.
+        /// BRTDP: the gap between the initial state's bounds.
         residual: f64,
     },
     /// A dead-end analysis finished; `count` states were newly proven to have no proper

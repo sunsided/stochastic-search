@@ -24,6 +24,8 @@
 //!   the states a good policy visits; epsilon-consistent on them when it converges.
 //! - [`rtdp()`]: plain RTDP (Barto, Bradtke and Singh 1995), with LRTDP's solved check as
 //!   its stopping rule. The classic baseline.
+//! - [`brtdp()`]: bounded RTDP (McMahan, Likhachev and Gordon 2005). Keeps a lower and an
+//!   upper bound and samples where they are far apart; anytime, with a known gap.
 //! - [`ilao_star()`]: improved LAO* (Hansen and Zilberstein 2001). Grows the best partial
 //!   solution graph in depth-first passes; no sampling.
 //! - [`value_iteration()`]: value iteration over every reachable state. The exact reference.
@@ -36,7 +38,8 @@
 //!
 //! States from which no policy reaches a goal with probability 1 are valued per
 //! [`DeadEnds`]: at infinity (the default, exact SSP semantics), or at a finite give-up
-//! penalty that makes every input solvable.
+//! penalty that makes every input solvable. [`brtdp()`] needs finite upper bounds, so under
+//! infinite dead ends its lower bound must prove the dead ends it meets.
 //!
 //! ## Events
 //!
@@ -84,7 +87,6 @@
 //! ## Planned scope
 //!
 //! - AND/OR heuristic search: LAO* (the one-tip-at-a-time variant), CG-iLAO*
-//! - Bounded RTDP (upper and lower bounds for an anytime gap)
 //! - Belief tracking between POMDP decisions (POMCP's particle reinvigoration, tree reuse)
 //!
 //! See `docs/design.md` in the repository for the design and milestones.
@@ -100,6 +102,7 @@
 
 extern crate alloc;
 
+mod brtdp;
 mod budget;
 mod config;
 mod despot;
@@ -117,6 +120,7 @@ mod solution;
 mod space;
 mod value_iteration;
 
+pub use brtdp::brtdp;
 pub use budget::{Budget, Limits, Stats};
 pub use config::{Config, DeadEnds};
 pub use despot::{DespotConfig, despot};

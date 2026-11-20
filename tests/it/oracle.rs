@@ -145,3 +145,64 @@ pub fn determinization(table: &Table) -> Vec<f64> {
 
     h
 }
+
+/// The expected cost of always taking action 0, by Jacobi policy evaluation from the raw
+/// tables; infinity where action 0 does not reach the goal with probability 1.
+///
+/// States that cannot reach the goal under action 0 are fixed at infinity first, which
+/// spreads to every state that reaches them. Iterating from 0 approaches the finite values
+/// from below; the result is the last iterate plus 1, which is above the policy's true value
+/// (the residual is at most 1e-12 and no expected step count in the random tables comes
+/// near 10^12), and therefore an upper bound on the optimal value.
+pub fn first_action_values(table: &Table) -> Vec<f64> {
+    let reaches = reaches_goal_under_first_action(table);
+    let mut values: Vec<f64> = reaches
+        .iter()
+        .map(|&r| if r { 0.0 } else { f64::INFINITY })
+        .collect();
+    loop {
+        let next: Vec<f64> = (0..table.len())
+            .map(|state| match table.actions[state].first() {
+                _ if state == table.goal => 0.0,
+                Some(a) if reaches[state] => {
+                    a.cost + a.outcomes.iter().map(|&(t, p)| p * values[t]).sum::<f64>()
+                }
+                _ => f64::INFINITY,
+            })
+            .collect();
+
+        let change = next
+            .iter()
+            .zip(&values)
+            .filter(|(a, _)| a.is_finite())
+            .map(|(a, b)| (a - b).abs())
+            .fold(0.0, f64::max);
+        values = next;
+        if change < 1e-12 {
+            return values.into_iter().map(|v| v + 1.0).collect();
+        }
+    }
+}
+
+/// Marks the states from which the goal is reachable with positive probability when always
+/// taking action 0.
+fn reaches_goal_under_first_action(table: &Table) -> Vec<bool> {
+    let mut reaches = vec![false; table.len()];
+    reaches[table.goal] = true;
+    let mut changed = true;
+    while changed {
+        changed = false;
+        for state in 0..table.len() {
+            let Some(first) = table.actions[state].first() else {
+                continue;
+            };
+
+            if !reaches[state] && first.outcomes.iter().any(|&(t, _)| reaches[t]) {
+                reaches[state] = true;
+                changed = true;
+            }
+        }
+    }
+
+    reaches
+}

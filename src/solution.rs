@@ -3,6 +3,8 @@
 use core::fmt;
 use core::hash::Hash;
 
+use alloc::vec::Vec;
+
 use crate::budget::Stats;
 use crate::error::Error;
 use crate::model::Mdp;
@@ -17,10 +19,12 @@ pub type SolveResult<M> =
 pub enum Status {
     /// The convergence criterion holds: for LRTDP, RTDP and iLAO*, the initial state is
     /// labeled solved by the solved check; for value iteration, the last sweep's largest
-    /// residual was below epsilon.
+    /// residual was below epsilon; for BRTDP, the initial state's bounds are at most epsilon
+    /// apart.
     Converged,
     /// The [`Budget`](crate::Budget) stopped the run first. Values and policy are the ones
-    /// reached so far and carry no guarantee.
+    /// reached so far and carry no guarantee, except that BRTDP's bounds still bracket the
+    /// optimal values.
     BudgetExhausted,
     /// Proven: no policy reaches a goal with probability 1 from the initial state, so under
     /// [`DeadEnds::Infinite`](crate::DeadEnds::Infinite) its value is infinite and it has no
@@ -42,6 +46,8 @@ pub struct Solution<S, A> {
     status: Status,
     /// Counters of the run.
     stats: Stats,
+    /// BRTDP's upper bounds, indexed by [`Id`]; empty for the other algorithms.
+    upper: Vec<f64>,
 }
 
 impl<S, A> Solution<S, A> {
@@ -63,7 +69,16 @@ impl<S, A> Solution<S, A> {
             initial,
             status,
             stats: counters,
+            upper: Vec::new(),
         }
+    }
+
+    /// Attaches BRTDP's upper bounds, one per stored state, indexed by [`Id`].
+    pub(crate) fn with_upper(mut self, upper: Vec<f64>) -> Self {
+        debug_assert_eq!(upper.len(), self.space.len(), "one upper bound per state");
+        self.upper = upper;
+
+        self
     }
 
     /// How the run ended.
@@ -99,6 +114,13 @@ impl<S, A> Solution<S, A> {
         self.space.node(self.initial).value
     }
 
+    /// The upper bound on the initial state's optimal value, for [`brtdp`](crate::brtdp());
+    /// `None` for the other algorithms, which keep no upper bound.
+    #[must_use]
+    pub fn initial_upper_bound(&self) -> Option<f64> {
+        self.upper.get(self.initial as usize).copied()
+    }
+
     /// The policy's action in the initial state; see [`Solution::action`].
     #[must_use]
     pub fn initial_action(&self) -> Option<&A> {
@@ -117,10 +139,23 @@ impl<S: Hash + Eq, A> Solution<S, A> {
     /// The value of `state`, or `None` if the run never touched it.
     ///
     /// For LRTDP, RTDP and iLAO*, values outside the policy's reachable states are only bounds (lower bounds
-    /// with an admissible heuristic), not converged values.
+    /// with an admissible heuristic), not converged values. For BRTDP this is the lower
+    /// bound; see [`Solution::upper_bound`].
     #[must_use]
     pub fn value(&self, state: &S) -> Option<f64> {
         self.space.find(state).map(|id| self.space.node(id).value)
+    }
+
+    /// The upper bound on the optimal value of `state`, for [`brtdp`](crate::brtdp()).
+    ///
+    /// `None` if the run never touched `state`, and always for the other algorithms. With
+    /// [`Solution::value`] as the lower bound, BRTDP brackets the optimal value of every
+    /// stored state; see [`brtdp`](crate::brtdp()), section "Guarantee".
+    #[must_use]
+    pub fn upper_bound(&self, state: &S) -> Option<f64> {
+        self.space
+            .find(state)
+            .and_then(|id| self.upper.get(id as usize).copied())
     }
 
     /// The policy's action in `state`.
@@ -128,7 +163,8 @@ impl<S: Hash + Eq, A> Solution<S, A> {
     /// `None` at goals, dead ends, states where giving up is cheaper (under
     /// [`DeadEnds::Penalty`](crate::DeadEnds::Penalty)) and states the run never backed up.
     /// Every state reachable from the initial state under the policy of a converged run has
-    /// an action unless it is one of the first three.
+    /// an action unless it is one of the first three. BRTDP's policy is greedy on its upper
+    /// bound and may lack actions in the envelope; see [`brtdp`](crate::brtdp()).
     #[must_use]
     pub fn action(&self, state: &S) -> Option<&A> {
         self.space.find(state).and_then(|id| self.policy_of(id))
