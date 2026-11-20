@@ -4,6 +4,7 @@
 use proptest::prelude::*;
 use stochastic_search::{Config, DeadEnds, Error, Limits, Status, Zero, lrtdp, value_iteration};
 
+use crate::properties::assert_consistent;
 use crate::random::{Shape, ssp};
 use crate::table::{Table, action};
 
@@ -40,6 +41,12 @@ proptest! {
             let config = Config { dead_ends, ..bounded() };
             let solution = lrtdp(&table, 0, &|s: &usize| table.is_goal(*s), &heuristic, config);
             prop_assert!(solution.is_ok());
+
+            // The frozen policy keeps its residual bound even for bad heuristics.
+            let solution = solution.expect("checked above");
+            if solution.is_converged() {
+                assert_consistent(&table, &solution, false)?;
+            }
         }
     }
 }

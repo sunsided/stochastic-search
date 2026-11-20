@@ -1,7 +1,7 @@
 //! Property tests on random SSPs: LRTDP against value iteration and the raw-table oracle.
 
 use proptest::prelude::*;
-use stochastic_search::{Config, DeadEnds, Solution, lrtdp, value_iteration};
+use stochastic_search::{Config, DeadEnds, Solution, Zero, lrtdp, value_iteration};
 
 use crate::oracle::{determinization, optimal_values, policy_envelope, policy_is_proper, q_value};
 use crate::random::{Shape, ssp};
@@ -60,7 +60,7 @@ fn assert_within_bound(lrtdp_value: f64, optimal: f64, c_min: f64) -> Result<(),
 
 /// Asserts epsilon-consistency on the policy envelope: the policy residual always, and the
 /// full Bellman residual when `full` (consistent heuristics).
-fn assert_consistent(
+pub fn assert_consistent(
     table: &Table,
     solution: &Solution<usize, usize>,
     full: bool,
@@ -119,6 +119,23 @@ proptest! {
             assert_consistent(&table, &solution, true)?;
             prop_assert!(policy_is_proper(&table, &solution, 0));
         }
+    }
+
+    /// With epsilon picked so that the design bound is at most `TOLERANCE`, LRTDP's initial
+    /// value is literally within `TOLERANCE` of value iteration's.
+    #[test]
+    fn lrtdp_is_within_tolerance_of_value_iteration(states in 2_usize..10, seed in any::<u64>()) {
+        /// The required distance to `V*`.
+        const TOLERANCE: f64 = 1e-4;
+
+        let table = ssp(states, seed, Shape::Proper);
+        let optimal = solve_vi(&table, DeadEnds::Infinite).initial_value();
+        let epsilon = TOLERANCE * table.min_cost() / (2.0 * optimal.max(1.0));
+        let config = Config { epsilon, seed, ..Config::default() };
+        let solution = lrtdp(&table, 0, &|s: &usize| table.is_goal(*s), &Zero, config).expect("valid input");
+
+        prop_assert!(solution.is_converged());
+        prop_assert!((solution.initial_value() - optimal).abs() <= TOLERANCE);
     }
 
     /// With avoidable traps under infinite dead-end cost, LRTDP still converges to the
