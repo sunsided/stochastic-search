@@ -239,3 +239,13 @@ fn heuristic_by_mutable_reference() {
     let goals = u64::from(solution.value(&table.goal).is_some());
     assert_eq!(heuristic.calls + goals, solution.stats().states);
 }
+
+/// The default budget is finite, so a default run always returns.
+#[test]
+fn default_budget_is_finite() {
+    let limits = Config::default().budget;
+
+    assert!(limits.max_backups.is_some());
+    assert!(limits.max_states.is_some());
+    assert_eq!(Limits::default(), Limits::DEFAULT);
+}
