@@ -45,6 +45,18 @@ pub enum Event {
         /// Bellman backups so far.
         backups: u64,
     },
+    /// Periodic progress of a tree planner ([`pomcp`](crate::pomcp()),
+    /// [`despot`](crate::despot())), every `progress_interval` simulations or explorations
+    /// of its configuration.
+    TreeProgress {
+        /// The counters so far.
+        stats: crate::TreeStats,
+        /// The current value estimate of the recommended action: POMCP's best root action
+        /// value, DESPOT's root lower bound `ell(b0)`.
+        value: f64,
+        /// DESPOT: the root gap `mu(b0) - ell(b0)`. POMCP keeps no bounds: `None`.
+        gap: Option<f64>,
+    },
 }
 
 /// Receives [`Event`]s while an algorithm runs.

@@ -17,6 +17,7 @@ use alloc::vec::Vec;
 
 use crate::budget::{Budget, Limits, TreeStats};
 use crate::error::Error;
+use crate::observer::{Event, Observer};
 use crate::pomcp::tree::{ROOT, Tree};
 use crate::pomdp::{
     Plan, Pomdp, RolloutPolicy, below, check_horizon, check_reward, collect_actions,
@@ -37,7 +38,7 @@ use crate::solution::Status;
 /// # let _ = config;
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct PomcpConfig<B = Limits> {
+pub struct PomcpConfig<B = Limits, O = ()> {
     /// The discount factor `gamma`, in `(0, 1]`. Default `0.95`.
     pub discount: f64,
     /// The UCB exploration constant `c`, finite and non-negative.
@@ -53,6 +54,12 @@ pub struct PomcpConfig<B = Limits> {
     /// Stops the search. Asked before every simulation with the [`TreeStats`] so far.
     /// Default [`PomcpConfig::DEFAULT_LIMITS`].
     pub budget: B,
+    /// Receives [`Event::TreeProgress`] every [`PomcpConfig::progress_interval`]
+    /// simulations. Default `()`, which ignores events at no cost.
+    pub observer: O,
+    /// Emit [`Event::TreeProgress`] every this many simulations; `None` never. At least
+    /// `1`. Default `Some(1_000)`; ignored by the default observer.
+    pub progress_interval: Option<u64>,
 }
 
 impl PomcpConfig {
@@ -71,34 +78,64 @@ impl Default for PomcpConfig {
             max_depth: 100,
             seed: 0,
             budget: Self::DEFAULT_LIMITS,
+            observer: (),
+            progress_interval: Some(1_000),
         }
     }
 }
 
-impl<B> PomcpConfig<B> {
+impl<B, O> PomcpConfig<B, O> {
     /// Returns the same configuration with another budget.
     #[must_use]
-    pub fn with_budget<B2: Budget<TreeStats>>(self, budget: B2) -> PomcpConfig<B2> {
+    pub fn with_budget<B2: Budget<TreeStats>>(self, budget: B2) -> PomcpConfig<B2, O> {
         PomcpConfig {
             discount: self.discount,
             exploration: self.exploration,
             max_depth: self.max_depth,
             seed: self.seed,
             budget,
+            observer: self.observer,
+            progress_interval: self.progress_interval,
+        }
+    }
+
+    /// Returns the same configuration with another observer.
+    #[must_use]
+    pub fn with_observer<O2: Observer>(self, observer: O2) -> PomcpConfig<B, O2> {
+        PomcpConfig {
+            discount: self.discount,
+            exploration: self.exploration,
+            max_depth: self.max_depth,
+            seed: self.seed,
+            budget: self.budget,
+            observer,
+            progress_interval: self.progress_interval,
         }
     }
 
     /// Checks the numeric settings.
     ///
+    /// # Events
+    ///
+    /// [`PomcpConfig::observer`] receives [`Event::TreeProgress`] every
+    /// [`PomcpConfig::progress_interval`] simulations, with the best root action value and no
+    /// gap. The default observer `()` costs nothing, and an observer never changes the plan.
+    ///
     /// # Errors
     ///
     /// Returns [`Error::InvalidConfig`] for a discount outside `(0, 1]`, a negative or
-    /// non-finite exploration constant or a zero depth.
+    /// non-finite exploration constant, a zero depth or a zero progress interval.
     fn validate<S>(&self) -> Result<(), Error<S>> {
         check_horizon(self.discount, self.max_depth)?;
         if !(self.exploration.is_finite() && self.exploration >= 0.0) {
             return Err(Error::InvalidConfig {
                 reason: "exploration must be finite and non-negative",
+            });
+        }
+
+        if self.progress_interval == Some(0) {
+            return Err(Error::InvalidConfig {
+                reason: "progress_interval must be at least 1",
             });
         }
 
@@ -167,11 +204,11 @@ impl<B> PomcpConfig<B> {
 /// assert_eq!(plan.action, "peek");
 /// # Ok::<(), stochastic_search::Error<bool>>(())
 /// ```
-pub fn pomcp<P, R, B>(
+pub fn pomcp<P, R, B, O>(
     pomdp: &P,
     belief: &[P::State],
     rollout: R,
-    config: PomcpConfig<B>,
+    config: PomcpConfig<B, O>,
 ) -> Result<Plan<P::Action>, Error<P::State>>
 where
     P: Pomdp,
@@ -180,6 +217,7 @@ where
     P::Observation: PartialEq,
     R: RolloutPolicy<P::State>,
     B: Budget<TreeStats>,
+    O: Observer,
 {
     config.validate()?;
     if belief.is_empty() {
@@ -197,6 +235,8 @@ where
         exploration: config.exploration,
         max_depth: config.max_depth,
         budget: config.budget,
+        observer: config.observer,
+        progress_interval: config.progress_interval,
         stats: TreeStats::default(),
         path: Vec::new(),
     };
@@ -205,13 +245,14 @@ where
         search.stats.simulations += 1;
         let particle = belief[below(&mut search.rng, belief.len())].clone();
         search.simulate(particle)?;
+        search.report_progress();
     }
 
     Ok(search.recommend())
 }
 
 /// The state of one [`pomcp`] call.
-struct Search<'a, P: Pomdp, R, B> {
+struct Search<'a, P: Pomdp, R, B, O> {
     /// The model.
     pomdp: &'a P,
     /// The actions, in emission order.
@@ -230,13 +271,17 @@ struct Search<'a, P: Pomdp, R, B> {
     max_depth: usize,
     /// The caller's budget.
     budget: B,
+    /// The caller's observer.
+    observer: O,
+    /// Simulations between progress events.
+    progress_interval: Option<u64>,
     /// The counters so far.
     stats: TreeStats,
     /// Reused buffer: the action nodes of the current simulation and their rewards.
     path: Vec<(u32, f64)>,
 }
 
-impl<P, R, B> Search<'_, P, R, B>
+impl<P, R, B, O> Search<'_, P, R, B, O>
 where
     P: Pomdp,
     P::State: Clone,
@@ -244,7 +289,24 @@ where
     P::Observation: PartialEq,
     R: RolloutPolicy<P::State>,
     B: Budget<TreeStats>,
+    O: Observer,
 {
+    /// Emits [`Event::TreeProgress`] if one is due after the current simulation.
+    fn report_progress(&mut self) {
+        let due = self
+            .progress_interval
+            .is_some_and(|interval| self.stats.simulations % interval == 0);
+        if O::ENABLED && due {
+            self.stats.nodes = self.tree.len() as u64;
+            let (_, value) = self.tree.best_root_action();
+            self.observer.observe(Event::TreeProgress {
+                stats: self.stats,
+                value,
+                gap: None,
+            });
+        }
+    }
+
     /// Syncs the counters and asks the budget whether to stop.
     fn exhausted(&mut self) -> bool {
         self.stats.nodes = self.tree.len() as u64;

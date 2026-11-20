@@ -21,6 +21,7 @@ use alloc::vec::Vec;
 use crate::budget::{Budget, Limits, TreeStats};
 use crate::despot::tree::{Branch, Node, ROOT, Tree, UNEXPANDED};
 use crate::error::Error;
+use crate::observer::{Event, Observer};
 use crate::pomdp::{
     Plan, Pomdp, RolloutPolicy, below, check_horizon, check_reward, collect_actions,
 };
@@ -41,7 +42,7 @@ use crate::solution::Status;
 /// # let _ = config;
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct DespotConfig<B = Limits> {
+pub struct DespotConfig<B = Limits, O = ()> {
     /// The discount factor `gamma`, in `(0, 1]`. Default `0.95`.
     pub discount: f64,
     /// The number of sampled scenarios `K`, at least `1`. Default `500`, as in the paper.
@@ -67,6 +68,12 @@ pub struct DespotConfig<B = Limits> {
     /// Stops the search. Asked before every exploration with the [`TreeStats`] so far.
     /// Default [`DespotConfig::DEFAULT_LIMITS`].
     pub budget: B,
+    /// Receives [`Event::TreeProgress`] every [`DespotConfig::progress_interval`]
+    /// simulations. Default `()`, which ignores events at no cost.
+    pub observer: O,
+    /// Emit [`Event::TreeProgress`] every this many simulations; `None` never. At least
+    /// `1`. Default `Some(1_000)`; ignored by the default observer.
+    pub progress_interval: Option<u64>,
 }
 
 impl DespotConfig {
@@ -88,14 +95,16 @@ impl Default for DespotConfig {
             target_gap: 1e-6,
             seed: 0,
             budget: Self::DEFAULT_LIMITS,
+            observer: (),
+            progress_interval: Some(1_000),
         }
     }
 }
 
-impl<B> DespotConfig<B> {
+impl<B, O> DespotConfig<B, O> {
     /// Returns the same configuration with another budget.
     #[must_use]
-    pub fn with_budget<B2: Budget<TreeStats>>(self, budget: B2) -> DespotConfig<B2> {
+    pub fn with_budget<B2: Budget<TreeStats>>(self, budget: B2) -> DespotConfig<B2, O> {
         DespotConfig {
             discount: self.discount,
             scenarios: self.scenarios,
@@ -105,10 +114,35 @@ impl<B> DespotConfig<B> {
             target_gap: self.target_gap,
             seed: self.seed,
             budget,
+            observer: self.observer,
+            progress_interval: self.progress_interval,
+        }
+    }
+
+    /// Returns the same configuration with another observer.
+    #[must_use]
+    pub fn with_observer<O2: Observer>(self, observer: O2) -> DespotConfig<B, O2> {
+        DespotConfig {
+            discount: self.discount,
+            scenarios: self.scenarios,
+            regularization: self.regularization,
+            xi: self.xi,
+            max_depth: self.max_depth,
+            target_gap: self.target_gap,
+            seed: self.seed,
+            budget: self.budget,
+            observer,
+            progress_interval: self.progress_interval,
         }
     }
 
     /// Checks the numeric settings.
+    ///
+    /// # Events
+    ///
+    /// [`DespotConfig::observer`] receives [`Event::TreeProgress`] every
+    /// [`DespotConfig::progress_interval`] explorations, with the root lower bound and the root
+    /// gap. The default observer `()` costs nothing, and an observer never changes the plan.
     ///
     /// # Errors
     ///
@@ -123,6 +157,8 @@ impl<B> DespotConfig<B> {
             "xi must lie in [0, 1)"
         } else if !(self.target_gap.is_finite() && self.target_gap >= 0.0) {
             "target_gap must be finite and non-negative"
+        } else if self.progress_interval == Some(0) {
+            "progress_interval must be at least 1"
         } else {
             return Ok(());
         };
@@ -207,12 +243,12 @@ impl<B> DespotConfig<B> {
 /// assert_eq!(plan.action, "peek");
 /// # Ok::<(), stochastic_search::Error<bool>>(())
 /// ```
-pub fn despot<P, R, U, B>(
+pub fn despot<P, R, U, B, O>(
     pomdp: &P,
     belief: &[P::State],
     default: R,
     upper: U,
-    config: DespotConfig<B>,
+    config: DespotConfig<B, O>,
 ) -> Result<Plan<P::Action>, Error<P::State>>
 where
     P: Pomdp,
@@ -222,6 +258,7 @@ where
     R: RolloutPolicy<P::State>,
     U: FnMut(&P::State) -> f64,
     B: Budget<TreeStats>,
+    O: Observer,
 {
     let mut search = Search::new(pomdp, belief, default, upper, config)?;
     let status = search.run()?;
@@ -230,7 +267,7 @@ where
 }
 
 /// The state of one [`despot`] call.
-struct Search<'a, P: Pomdp, R, U, B> {
+struct Search<'a, P: Pomdp, R, U, B, O> {
     /// The model.
     pomdp: &'a P,
     /// The actions, in emission order.
@@ -243,6 +280,10 @@ struct Search<'a, P: Pomdp, R, U, B> {
     upper: U,
     /// The caller's budget.
     budget: B,
+    /// The caller's observer.
+    observer: O,
+    /// Explorations between progress events.
+    progress_interval: Option<u64>,
     /// The counters so far.
     stats: TreeStats,
     /// The seed the scenario streams derive from.
@@ -263,7 +304,7 @@ struct Search<'a, P: Pomdp, R, U, B> {
     target_gap: f64,
 }
 
-impl<'a, P, R, U, B> Search<'a, P, R, U, B>
+impl<'a, P, R, U, B, O> Search<'a, P, R, U, B, O>
 where
     P: Pomdp,
     P::State: Clone,
@@ -272,6 +313,7 @@ where
     R: RolloutPolicy<P::State>,
     U: FnMut(&P::State) -> f64,
     B: Budget<TreeStats>,
+    O: Observer,
 {
     /// Validates the input, samples the scenarios and initializes the root.
     ///
@@ -283,7 +325,7 @@ where
         belief: &[P::State],
         default: R,
         upper: U,
-        config: DespotConfig<B>,
+        config: DespotConfig<B, O>,
     ) -> Result<Self, Error<P::State>> {
         config.validate()?;
         if belief.is_empty() {
@@ -305,6 +347,8 @@ where
             default,
             upper,
             budget: config.budget,
+            observer: config.observer,
+            progress_interval: config.progress_interval,
             stats: TreeStats::default(),
             seed: config.seed,
             discount: config.discount,
@@ -353,6 +397,7 @@ where
             self.stats.simulations += 1;
             let leaf = self.explore()?;
             self.back_up_path(leaf);
+            self.report_progress();
         }
 
         self.stats.nodes = self.tree.nodes.len() as u64;
@@ -552,6 +597,23 @@ where
         });
 
         Ok(())
+    }
+
+    /// Emits [`Event::TreeProgress`] if one is due after the current exploration.
+    fn report_progress(&mut self) {
+        let due = self
+            .progress_interval
+            .is_some_and(|interval| self.stats.simulations % interval == 0);
+        if O::ENABLED && due {
+            self.stats.nodes = self.tree.nodes.len() as u64;
+            let root = self.tree.node(ROOT);
+            let (value, gap) = (root.ell, root.mu - root.ell);
+            self.observer.observe(Event::TreeProgress {
+                stats: self.stats,
+                value,
+                gap: Some(gap),
+            });
+        }
     }
 
     /// Adds a node at `depth` with `scenarios` (never empty) and initializes its bounds

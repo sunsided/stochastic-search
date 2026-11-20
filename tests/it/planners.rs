@@ -7,7 +7,8 @@
 //! first-step difference in noise.
 
 use stochastic_search::{
-    DespotConfig, Error, Limits, Plan, PomcpConfig, Status, UniformRandom, despot, pomcp,
+    DespotConfig, Error, Event, Limits, Plan, PomcpConfig, Status, UniformRandom, despot,
+    observer_fn, pomcp,
 };
 
 use crate::pomdps::{
@@ -388,4 +389,68 @@ fn planners_keep_their_pinned_values() {
     let plan = despot_tiger(1, 2, 5);
     assert_eq!(plan.action, TigerAction::Listen);
     assert_eq!(plan.value.to_bits(), 0x403a_ce5a_27f6_1342);
+}
+
+/// POMCP and DESPOT report progress every `progress_interval` simulations, and an
+/// observer changes nothing about the plan.
+#[test]
+fn tree_planners_report_progress_without_changing_the_plan() {
+    let mut events = Vec::new();
+    let config = pomcp_config(7, 110.0, 2_000);
+    let observed = pomcp(
+        &Tiger,
+        &tiger_belief(1, 2),
+        UniformRandom,
+        PomcpConfig {
+            progress_interval: Some(500),
+            ..config
+        }
+        .with_observer(observer_fn(|event| events.push(event))),
+    )
+    .expect("valid input");
+    let plain = pomcp(&Tiger, &tiger_belief(1, 2), UniformRandom, config).expect("valid input");
+
+    assert_eq!(observed.value.to_bits(), plain.value.to_bits());
+    assert_eq!(observed.stats, plain.stats);
+    let simulations: Vec<u64> = events
+        .iter()
+        .map(|event| match event {
+            Event::TreeProgress { stats, gap, .. } => {
+                assert!(gap.is_none());
+                stats.simulations
+            }
+            _ => panic!("unexpected event {event:?}"),
+        })
+        .collect();
+    assert_eq!(simulations, [500, 1_000, 1_500, 2_000]);
+
+    let mut gaps = Vec::new();
+    let config = DespotConfig {
+        progress_interval: Some(100),
+        ..despot_config(5, 300)
+    };
+    let observed = despot(
+        &Tiger,
+        &tiger_belief(1, 2),
+        AlwaysListen,
+        |_: &bool| TIGER_UPPER_BOUND,
+        config.with_observer(observer_fn(|event| {
+            if let Event::TreeProgress { gap: Some(gap), .. } = event {
+                gaps.push(gap);
+            }
+        })),
+    )
+    .expect("valid input");
+    let plain = despot(
+        &Tiger,
+        &tiger_belief(1, 2),
+        AlwaysListen,
+        |_: &bool| TIGER_UPPER_BOUND,
+        config,
+    )
+    .expect("valid input");
+
+    assert_eq!(observed.value.to_bits(), plain.value.to_bits());
+    assert_eq!(gaps.len(), 3);
+    assert!(gaps.windows(2).all(|pair| pair[1] <= pair[0] + 1e-9));
 }
