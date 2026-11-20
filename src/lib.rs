@@ -34,6 +34,24 @@
 //! - [`despot()`]: anytime regularized DESPOT (Somani et al. 2013, Ye et al. 2017). Bound
 //!   guided search over a tree of `K` determinized scenarios.
 //!
+//! ## The heuristic contract
+//!
+//! [`Goal`], [`Heuristic`], [`heuristic_fn`] and [`Budget`] are re-exported from
+//! `search-core`, shared with the other planning crates. The algorithms here use
+//! `Heuristic<S, f64>` (closures infer `f64`) under this contract:
+//!
+//! - `estimate` is called once per state, when the state is first stored; never for goals.
+//!   It takes `&mut self`, so a heuristic can keep a workspace; algorithms take it by value,
+//!   pass `&mut h` to keep `h`.
+//! - `None` (or an infinite estimate) means no proper policy exists from the state, a proven
+//!   dead end that is never expanded. Return it only when that is certain.
+//! - NaN and negative infinity are rejected with [`Error::InvalidHeuristic`].
+//! - The optimality guarantees need an admissible heuristic (never above the optimal
+//!   expected cost). Inadmissible ones never panic; they only void the guarantee.
+//!
+//! [`Zero`] is this crate's own `f64` heuristic: `search-core`'s zero heuristic covers only
+//! its integer-like cost types.
+//!
 //! ## Dead ends
 //!
 //! States from which no policy reaches a goal with probability 1 are valued per

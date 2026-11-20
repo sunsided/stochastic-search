@@ -11,23 +11,7 @@
 //! here: the MDP shape is specific to this crate, and `search-core`'s zero heuristic covers
 //! only its integer-like `Cost` types, not `f64`.
 //!
-//! # The heuristic contract
-//!
-//! The algorithms of this crate use `Heuristic<S, f64>`, which closures infer on their own.
-//! `estimate` takes `&mut self`, so a heuristic can keep a reusable workspace; algorithms
-//! take the heuristic by value and own it for the run; pass `&mut h` to keep `h` and its
-//! workspace afterwards.
-//!
-//! - It is called once per state, when the state is first stored. Goal states are
-//!   absorbing and cost-free and are never estimated.
-//! - `None` (or an infinite estimate) means no proper policy exists from the state (a proven
-//!   dead end). Algorithms never expand such states, so a heuristic must only return `None`
-//!   when that is certain.
-//! - NaN and negative infinity are rejected with
-//!   [`Error::InvalidHeuristic`](crate::Error::InvalidHeuristic).
-//! - LRTDP, RTDP and iLAO* return optimal values only if the heuristic is admissible (never
-//!   overestimates the optimal expected cost). Inadmissible heuristics never cause a panic;
-//!   they only void the optimality bound.
+//! The heuristic contract is in the crate documentation, section "The heuristic contract".
 
 pub use search_core::{Goal, Heuristic, HeuristicFn, heuristic_fn};
 

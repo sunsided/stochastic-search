@@ -1,12 +1,4 @@
 //! Run counters ([`Stats`]) and early stopping ([`Budget`], [`Limits`]).
-//!
-//! [`Budget`] is `search-core`'s trait, used here as `Budget<Stats>`: it decides when a run
-//! must stop before it converges. It is asked before every Bellman backup, every LRTDP, RTDP
-//! or BRTDP trial, every iLAO* pass and every state expansion of value iteration's
-//! enumeration, with the counters so far, so a run stopped by [`Limits::max_backups`] `= n`
-//! has performed exactly `n` backups. Implemented for [`Limits`] and, by `search-core`, for
-//! every `FnMut(&Stats) -> bool`, which lets callers with a clock (this crate is `no_std`)
-//! add a time limit.
 
 pub use search_core::Budget;
 
@@ -29,6 +21,13 @@ pub struct Stats {
 }
 
 /// Simple counter limits.
+///
+/// Every algorithm asks its [`Budget`] (`search_core::Budget<Stats>`, implemented by
+/// `search-core` for every `FnMut(&Stats) -> bool`, which lets callers with a clock add a
+/// time limit, and here for `Limits`) before every Bellman backup, every LRTDP, RTDP or
+/// BRTDP trial, every iLAO* pass and every state expansion of value iteration's
+/// enumeration, with the counters so far. So a run stopped by [`Limits::max_backups`]
+/// `= n` has performed exactly `n` backups.
 ///
 /// The default, [`Limits::DEFAULT`], is generous but finite, so a run with the default
 /// [`Config`](crate::Config) always returns. [`Limits::unlimited`] removes every limit.
