@@ -58,14 +58,23 @@ impl<S, A, const N: usize> MoSolution<S, A, N> {
     /// state's value. A converged run whose initial value holds no vector besides `b` is
     /// [`Status::Unsolvable`]; a run stopped by its budget keeps
     /// [`Status::BudgetExhausted`], since its sets may still gain vectors.
-    pub(crate) fn new(space: Space<S, A, N>, initial: Id, status: Status, counters: Stats) -> Self {
+    ///
+    /// Each policy's value is its own expected cost vector, found by evaluating it to
+    /// `epsilon / 1000`; improper policies and duplicates are dropped.
+    pub(crate) fn new(
+        space: Space<S, A, N>,
+        initial: Id,
+        status: Status,
+        counters: Stats,
+        epsilon: f64,
+    ) -> Self {
         let status = if status == Status::Converged && space.node(initial).value.points.is_empty() {
             Status::Unsolvable
         } else {
             status
         };
 
-        let policies = extract_policies(&space, initial);
+        let policies = extract_policies(&space, initial, epsilon / 1000.0);
 
         Self {
             space,
@@ -164,8 +173,13 @@ pub struct MoPolicy<'a, S, A, const N: usize> {
 }
 
 impl<'a, S, A, const N: usize> MoPolicy<'a, S, A, N> {
-    /// The expected cost vector of the policy at the initial state, as computed by the run
-    /// (epsilon-close to the policy's exact value when the run converged).
+    /// The expected cost vector of the policy at the initial state: the policy evaluated
+    /// on its own (iteratively, to a thousandth of epsilon), not the run's estimate.
+    ///
+    /// The two can differ even after convergence. Within the margin, a set may keep the
+    /// value of a non-stationary policy (one that switches between vertex policies when it
+    /// revisits a state) instead of the nearby vertex, and only a deterministic stationary
+    /// policy can be returned.
     #[must_use]
     pub fn value(&self) -> &'a [f64; N] {
         &self.data.value
@@ -222,34 +236,150 @@ impl<'a, S: Hash + Eq, A, const N: usize> MoPolicy<'a, S, A, N> {
 fn extract_policies<S, A, const N: usize>(
     space: &Space<S, A, N>,
     initial: Id,
+    tolerance: f64,
 ) -> Vec<PolicyData<N>> {
     let points = &space.node(initial).value.points;
     let mut tableau = Vec::new();
     let mut others = Vec::new();
 
-    points
-        .iter()
-        .enumerate()
-        .map(|(index, point)| {
-            others.clear();
-            others.extend(
-                points
-                    .iter()
-                    .enumerate()
-                    .filter(|&(other, _)| other != index)
-                    .map(|(_, other)| other.vector),
-            );
-            let (weight, gap) = best_weight(&point.vector, &others, &mut tableau);
-            let weight = nudge_inward(weight, gap, &point.vector, &others);
-            let actions = follow(space, initial, point.action, &weight);
-
-            PolicyData {
+    let mut policies: Vec<PolicyData<N>> = Vec::new();
+    for (index, point) in points.iter().enumerate() {
+        others.clear();
+        others.extend(
+            points
+                .iter()
+                .enumerate()
+                .filter(|&(other, _)| other != index)
+                .map(|(_, other)| other.vector),
+        );
+        let (weight, gap) = best_weight(&point.vector, &others, &mut tableau);
+        let weight = nudge_inward(weight, gap, &point.vector, &others);
+        let actions = follow(space, initial, point.action, &weight);
+        if space.node(initial).kind != Kind::Open {
+            policies.push(PolicyData {
                 value: point.vector,
                 weight,
                 actions,
-            }
+            });
+            continue;
+        }
+
+        let duplicate = policies.iter().any(|policy| policy.actions == actions);
+        let Some(value) = evaluate(space, initial, &actions, &weight, tolerance) else {
+            continue;
+        };
+
+        if !duplicate {
+            policies.push(PolicyData {
+                value,
+                weight,
+                actions,
+            });
+        }
+    }
+
+    policies
+}
+
+/// The expected cost vector of the policy `actions` (sorted by state) at `initial`; `None`
+/// if it is improper: some state it reaches
+/// has no action and is no goal, or cannot reach a goal under the policy.
+///
+/// Gauss-Seidel sweeps from the run's `weight`-best vectors until no component moves by
+/// more than `tolerance`, at most [`MAX_EVALUATION_SWEEPS`] sweeps.
+fn evaluate<S, A, const N: usize>(
+    space: &Space<S, A, N>,
+    initial: Id,
+    actions: &[(Id, u32)],
+    weight: &[f64; N],
+    tolerance: f64,
+) -> Option<[f64; N]> {
+    let index_of = |state: Id| actions.binary_search_by_key(&state, |&(id, _)| id).ok();
+    let closed = actions.iter().all(|&(_, action)| {
+        space.outcomes(action).iter().all(|outcome| {
+            space.node(outcome.target).kind == Kind::Goal || index_of(outcome.target).is_some()
         })
-        .collect()
+    });
+    if !closed || !reaches_goal(space, actions, &index_of) {
+        return None;
+    }
+
+    let mut values: Vec<[f64; N]> = actions
+        .iter()
+        .map(|&(state, _)| {
+            let set = &space.node(state).value;
+            best_under(set, weight).map_or([0.0; N], |best| set.points[best].vector)
+        })
+        .collect();
+    for _ in 0..MAX_EVALUATION_SWEEPS {
+        if sweep_policy(space, actions, &index_of, &mut values) <= tolerance {
+            break;
+        }
+    }
+
+    Some(values[index_of(initial)?])
+}
+
+/// The most sweeps of one policy evaluation.
+const MAX_EVALUATION_SWEEPS: usize = 1_000_000;
+
+/// One Gauss-Seidel sweep of policy evaluation; returns the largest change of a component.
+fn sweep_policy<S, A, const N: usize>(
+    space: &Space<S, A, N>,
+    actions: &[(Id, u32)],
+    index_of: &impl Fn(Id) -> Option<usize>,
+    values: &mut [[f64; N]],
+) -> f64 {
+    let mut largest = 0.0_f64;
+    for (row, &(_, action)) in actions.iter().enumerate() {
+        let mut value = space.action(action).cost;
+        for outcome in space.outcomes(action) {
+            if let Some(index) = index_of(outcome.target) {
+                for (component, add) in value.iter_mut().zip(&values[index]) {
+                    *component += outcome.probability * add;
+                }
+            }
+        }
+
+        for (new, old) in value.iter().zip(&values[row]) {
+            largest = largest.max(libm::fabs(new - old));
+        }
+
+        values[row] = value;
+    }
+
+    largest
+}
+
+/// Returns `true` if every state of the policy reaches a goal in the policy's graph, so
+/// that a goal is reached with probability 1.
+fn reaches_goal<S, A, const N: usize>(
+    space: &Space<S, A, N>,
+    actions: &[(Id, u32)],
+    index_of: &impl Fn(Id) -> Option<usize>,
+) -> bool {
+    let mut good = alloc::vec![false; actions.len()];
+    loop {
+        let mut changed = false;
+        for (row, &(_, action)) in actions.iter().enumerate() {
+            if good[row] {
+                continue;
+            }
+
+            let reaches = space
+                .outcomes(action)
+                .iter()
+                .any(|outcome| index_of(outcome.target).is_none_or(|index| good[index]));
+            if reaches {
+                good[row] = true;
+                changed = true;
+            }
+        }
+
+        if !changed {
+            return good.iter().all(|&g| g);
+        }
+    }
 }
 
 /// Moves `weight` towards the uniform weight while `v` keeps at least half its margin

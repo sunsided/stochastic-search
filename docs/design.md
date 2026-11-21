@@ -484,6 +484,8 @@ separate `Objectives<N>`.
   centre while it keeps half its margin, because corner weights tie on the zero-weight
   objectives. The policy takes the vertex's tagged action at `s0` and, at every state it
   reaches, the tagged action of the vector minimising `w . v`.
+  It is then evaluated by Gauss-Seidel sweeps to `epsilon / 1000`, and
+  `MoPolicy::value` is that evaluation, not the set's vector.
 - Heuristics are `Heuristic<S, Vec<[f64; N]>>`; `ZeroVector` is the blind one (`search-core`'s
   `Zero` cannot get this impl here: both trait and type are foreign). Admissibility is
   scalarised: for every weight `w`, `min_{H(s)} w . u <= min_{V*(s)} w . v`. This is what
@@ -528,7 +530,7 @@ separate `Objectives<N>`.
 | Algorithm 4 (iMOLAO*): postorder DFS over `Pi`, back up, expand tips; `while tips or max res < epsilon` | `imolao_star`: reverse depth-first preorder (a postorder on the DFS tree) | aligned: the paper's `< epsilon` is the same typo as above. A pass below epsilon must also leave the graph unchanged, because a near tie can switch a greedy action onto a tip (found by the one-objective property test, where iMOLAO* stopped at 7.0 against an optimum of 14.39) |
 | Algorithm 5 (MOLRTDP): back up, sample a greedy action with an unsolved successor, sample an unsolved successor | `molrtdp`: uniform over those actions, then a successor from the whole distribution; a trial also ends at a state holding only `b`, and at `max_trial_length` | deliberate: with unsolved-only successors, a trial inside a cycle ends only at the cut-off (10 000 backups on a three-state problem); the whole distribution ends it at the first solved state, as LRTDP does |
 | `checkSolved`: residual test, successors under all greedy actions, label or back up `closed` in reverse | same | aligned: the check stores the backup it computes, so the actions it follows match the stored value (the paper computes the residual without storing it) |
-| Policy extraction "with the choice of a scalarising weight" (Barrett and Narayanan 2008) | the LP weight of each vertex at `s0`, nudged inward; the tagged action at `s0` | matches; nudging breaks ties on zero-weight objectives |
+| Policy extraction "with the choice of a scalarising weight" (Barrett and Narayanan 2008) | the LP weight of each vertex at `s0`, nudged inward; the tagged action at `s0`; each policy is then evaluated on its own and reports that value | aligned: nudging breaks ties on zero-weight objectives. Within the margin, a set may keep a non-stationary policy's value instead of the nearby vertex: in a 3 000-case soak, a vector reported `4.956` where its stationary policy costs `4.965` in an objective of weight `1e-4`. Reporting the evaluated value keeps every returned value attained; improper and duplicate policies are dropped |
 | `H^max_ideal`, `H^pdb2/3_ideal` | `IdealPoint` over any scalar heuristics | analogue: the factored `h^max` and PDBs are not here |
 | `H^comax_mo`, `H^pdb_mo` (Geißer et al. 2022 on the determinisation) | `Abstraction` over `Determinized` (exact determinised CCS) | analogue: the exact value these heuristics bound from below |
 | `H^pdb_mossp` (MO topological VI per projection, combined by comax) | `Abstraction` over a caller-provided abstract MOSSP | analogue: one abstraction; no pattern selection, no comax over several |

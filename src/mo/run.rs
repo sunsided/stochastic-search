@@ -111,7 +111,13 @@ where
     pub(crate) fn into_solution(mut self, status: Status) -> MoSolution<M::State, M::Action, N> {
         self.meter.sync(&self.space);
 
-        MoSolution::new(self.space, self.start, status, self.meter.stats)
+        MoSolution::new(
+            self.space,
+            self.start,
+            status,
+            self.meter.stats,
+            self.epsilon,
+        )
     }
 
     /// Expands `state` if needed and backs it up; returns the Hausdorff distance between
