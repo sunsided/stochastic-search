@@ -1,0 +1,65 @@
+[package]
+name = "stochastic-search-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+# The generator trait of the fuzzed POMDP model; same version as the library's.
+rand_core = { version = "0.10.1", default-features = false }
+
+[dependencies.stochastic-search]
+path = ".."
+
+# Table models decoded from the fuzzer's bytes, shared by the targets.
+[lib]
+path = "src/lib.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "mdp_planners"
+path = "fuzz_targets/mdp_planners.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "mo_planners"
+path = "fuzz_targets/mo_planners.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "pomdp_planners"
+path = "fuzz_targets/pomdp_planners.rs"
+test = false
+doc = false
+bench = false
+
+# A separate workspace, kept out of the root one (cargo-fuzz needs nightly).
+[workspace]
+
+# Mirrors the root lint table; `workspace = true` cannot reach a separate workspace.
+[lints.rust]
+missing_docs = "warn"
+unsafe_code = "forbid"
+
+[lints.clippy]
+pedantic = { level = "warn", priority = -1 }
+mod_module_files = "deny"
+missing_docs_in_private_items = "warn"
+allow_attributes = "warn"
+allow_attributes_without_reason = "warn"
+undocumented_unsafe_blocks = "warn"
+multiple_unsafe_ops_per_block = "warn"
+cognitive_complexity = "warn"
+
+[lints.rustdoc]
+broken_intra_doc_links = "deny"
+private_intra_doc_links = "allow"
