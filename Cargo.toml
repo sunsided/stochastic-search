@@ -1,7 +1,7 @@
 [package]
 name = "stochastic-search"
 description = "Planning under probabilistic outcomes for MDPs and POMDPs: LAO*, iLAO*, CG-iLAO*, RTDP, LRTDP, BRTDP, FRTDP, VPI-RTDP, POMCP, DESPOT and multi-objective MOLAO*, iMOLAO* and MOLRTDP"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 rust-version = "1.85"
 authors = ["Markus Mayer <widemeadows@gmail.com>"]
