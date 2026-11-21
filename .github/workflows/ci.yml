@@ -1,8 +1,6 @@
 # Keep in sync with `task ci` in the Taskfile. Job `name:`s are the required status checks.
 # Actions are pinned to commit SHAs (tag in the comment); Dependabot updates them.
-# No step uses --locked: local builds patch search-core to the sibling working tree (the
-# planning hub's .cargo/config.toml) and rewrite its Cargo.lock entry, so a lock committed from
-# a hub checkout may not match what CI resolves from crates.io.
+# No step uses --locked and no Cargo.lock is tracked: CI resolves fresh from crates.io.
 name: CI
 
 on:
