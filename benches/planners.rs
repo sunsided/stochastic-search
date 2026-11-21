@@ -1,16 +1,17 @@
 //! Benchmarks for the hot paths: LRTDP trials on a corridor SSP, LRTDP against the bounded
 //! RTDP variants on a noisy corridor, LAO* against iLAO* and CG-iLAO*, POMCP simulations
-//! and DESPOT explorations on Tiger, tree reuse between decisions, and the particle filter.
+//! and DESPOT explorations on Tiger, tree reuse between decisions, the particle filter, and
+//! the multi-objective algorithms on a bi-objective corridor.
 
 use std::hint::black_box;
 
 use criterion::Criterion;
 use rand_core::Rng;
 use stochastic_search::{
-    BeliefFilter, BrtdpConfig, Config, Despot, DespotConfig, FrtdpConfig, Limits, Mdp, Pomcp,
-    PomcpConfig, Pomdp, RolloutPolicy, SplitMix64, Step, VpiRtdpConfig, Zero, brtdp, cg_ilao_star,
-    despot, frtdp, heuristic_fn, ilao_star, lao_star, lrtdp, pomcp, unit_interval, update_belief,
-    vpi_rtdp,
+    BeliefFilter, BrtdpConfig, Config, Despot, DespotConfig, FrtdpConfig, Limits, Mdp, MoMdp,
+    Objectives, Pomcp, PomcpConfig, Pomdp, RolloutPolicy, SplitMix64, Step, VpiRtdpConfig, Zero,
+    brtdp, cg_ilao_star, despot, frtdp, heuristic_fn, ilao_star, imolao_star, lao_star, lrtdp,
+    mo_value_iteration, molao_star, molrtdp, pomcp, unit_interval, update_belief, vpi_rtdp,
 };
 
 /// Runs every benchmark in this file with criterion's command-line flags.
@@ -24,6 +25,7 @@ fn main() {
     bench_despot(&mut criterion);
     bench_reuse(&mut criterion);
     bench_belief(&mut criterion);
+    bench_mo(&mut criterion);
     criterion.final_summary();
 }
 
@@ -309,4 +311,62 @@ fn bench_despot(criterion: &mut Criterion) {
             black_box(plan.value)
         });
     });
+}
+
+/// A bi-objective corridor of 30 cells: `run` costs `[1, 0]` and slips back in place with
+/// probability 0.5, `ride` costs `[0, 1]` and slips with probability 0.1, `walk` costs
+/// `[0.6, 0.6]` and never slips. The front has a vertex per mix of the three.
+struct MoCorridor;
+
+impl MoMdp<2> for MoCorridor {
+    type State = u32;
+    type Action = u8;
+
+    fn actions(&self, _state: &u32, mut emit: impl FnMut(u8, [f64; 2])) {
+        emit(0, [1.0, 0.0]);
+        emit(1, [0.0, 1.0]);
+        emit(2, [0.6, 0.6]);
+    }
+
+    fn outcomes(&self, state: &u32, action: &u8, mut emit: impl FnMut(u32, f64)) {
+        let slip = [0.5, 0.1, 0.0][usize::from(*action)];
+        emit(state + 1, 1.0 - slip);
+        if slip > 0.0 {
+            emit(*state, slip);
+        }
+    }
+}
+
+/// MOVI, MOLAO*, iMOLAO* and MOLRTDP on the bi-objective corridor with the blind heuristic.
+fn bench_mo(criterion: &mut Criterion) {
+    let goal = |state: &u32| *state == 30;
+    let objectives = Objectives::new([500.0, 500.0]);
+    let config = Config::default().with_epsilon(1e-4);
+    let mut group = criterion.benchmark_group("bi-objective corridor 30");
+    group.sample_size(10);
+    group.bench_function("movi", |bencher| {
+        bencher.iter(|| {
+            let solution = mo_value_iteration(&MoCorridor, 0, &goal, objectives, config);
+            black_box(solution.expect("valid input").policies().len())
+        });
+    });
+    group.bench_function("molao*", |bencher| {
+        bencher.iter(|| {
+            let solution = molao_star(&MoCorridor, 0, &goal, Zero, objectives, config);
+            black_box(solution.expect("valid input").policies().len())
+        });
+    });
+    group.bench_function("imolao*", |bencher| {
+        bencher.iter(|| {
+            let solution = imolao_star(&MoCorridor, 0, &goal, Zero, objectives, config);
+            black_box(solution.expect("valid input").policies().len())
+        });
+    });
+    group.bench_function("molrtdp", |bencher| {
+        bencher.iter(|| {
+            let solution = molrtdp(&MoCorridor, 0, &goal, Zero, objectives, config);
+            black_box(solution.expect("valid input").policies().len())
+        });
+    });
+    group.finish();
 }

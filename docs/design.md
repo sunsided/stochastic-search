@@ -1,7 +1,7 @@
 # stochastic-search: design
 
 Status: draft on branch `draft/initial`; milestones 1, 2 (RTDP, LAO*, iLAO*, BRTDP, FRTDP, VPI-RTDP) and 4 (POMCP and DESPOT with
-tree reuse and belief tracking) implemented.
+tree reuse and belief tracking) and 5 (multi-objective SSPs) implemented.
 
 ## Goal and scope
 
@@ -15,7 +15,8 @@ In scope, in milestone order (see [Milestones](#milestones)):
 - real-time dynamic programming: RTDP, labeled RTDP (LRTDP), and with two-sided bounds
   bounded RTDP (BRTDP), focused RTDP (FRTDP) and VPI-RTDP;
 - AND/OR heuristic search: LAO*, improved LAO* (iLAO*), CG-iLAO*;
-- belief space: POMCP, DESPOT, over a separate generative POMDP model.
+- belief space: POMCP, DESPOT, over a separate generative POMDP model;
+- multi-objective SSPs: MOVI, MOLAO*, iMOLAO*, MOLRTDP over cost vectors.
 
 Out of scope: deterministic graph search (`heuristic-search`), factored SAS+ models
 (`sas-plus`), PDDL front ends. Probabilistic PDDL (PPDDL, RDDL) grounding belongs to a
@@ -447,6 +448,132 @@ climb forever on a cycle of active actions that never reaches the goal, so it al
 after a sweep that queued candidates. Values can decrease, so `V <= V*` does not hold; the
 tests check `|V - V*|` against LRTDP's gap bound.
 
+### Multi-objective SSPs (milestone 5)
+
+Chen, Trevizan and Thiébaux 2023 (AAAI 2023, arXiv 2303.14363). A MOSSP gives every action
+a cost vector in `R^N_{>=0}` (`MoMdp<N>`, `[f64; N]` costs, `N` a const generic). The
+solution is the convex coverage set (CCS) of the proper policies' expected cost vectors at
+`s0`, one deterministic policy per vertex. The stochastic policies that mix vertex policies
+fill the hull's faces. They are implied by the vertices and never listed (the paper's
+Section 2). The module `mo` has its own lazily built space, because the scalar one stores
+one `f64` per state. It reuses `Config` (epsilon, seed, trial length, budget, observer),
+`Limits`/`Stats`, `Status` and `Error`. The upper bound `b` and the CCS margin are in a
+separate `Objectives<N>`.
+
+- A value is a `ValueSet`. Each vector is tagged with the action whose Q-value produced it,
+  and the bound `b` is kept as a separate list of the actions whose Q-value contains it.
+  `getActions` (equation 10) is the set of tags, so actions that only contribute `b` stay
+  greedy, as in the paper, where `CS_B` never prunes `b`. Without this, an action whose
+  current sums all overshoot `b` would leave the solution graph before its successors
+  converge. An admissible lower bound can still rise under `b` later.
+- CCS pruning keeps a vector when some weight makes it better than all remaining
+  vectors by more than the margin `lambda` (Roijers and Whiteson 2017, Section 4.1.3).
+  - One objective: the first minimum.
+  - Two objectives: a monotone chain over the sorted Pareto front, then the vertex of
+    smallest margin is removed while that margin is at most `lambda`. Against its two hull
+    neighbours, the margin has a closed form (`O(m log m)`).
+  - More objectives: a dominance filter, then one LP per vector, worst component sum
+    first, against the vectors still kept, so one of two near twins survives. Each LP is
+    the dual covering program: is some convex combination of the others `<= v + lambda`
+    in every objective? It is solved by phase one of a dense simplex with Bland's rule,
+    with `N + 1` rows instead of one row per vector. By the minimax theorem it decides the
+    same as the paper's primal program, which policy extraction still uses for the
+    weights (unit test `covering_agrees_with_the_margin`).
+- Policy extraction: the LP weight of each vertex at `s0` is nudged towards the simplex
+  centre while it keeps half its margin, because corner weights tie on the zero-weight
+  objectives. The policy takes the vertex's tagged action at `s0` and, at every state it
+  reaches, the tagged action of the vector minimising `w . v`.
+- Heuristics are `Heuristic<S, Vec<[f64; N]>>`, and `Zero` implements it. Admissibility is
+  scalarised: for every weight `w`, `min_{H(s)} w . u <= min_{V*(s)} w . v`. This is what
+  CCS backups preserve, since `min_w` commutes with the CCS operator and with set sums. It
+  is weaker than Definition 4.1 (set domination). Take a state that moves at zero cost to
+  `s1` or `s2` with probability 0.5 each, where `s1` reaches the goal for `[1, 0]` and `s2`
+  for `[0, 1]`. Its determinisation estimates `{[1, 0], [0, 1]}`, but `V* = {[0.5, 0.5]}`,
+  so Definition 4.1 fails (test `determinization_heuristic_on_the_coin`).
+  - `IdealPoint`: `[h_1, ..., h_N]` from single-objective heuristics. This is `H_ideal`;
+    `H^max_ideal` and `H^pdb_ideal` are instances.
+  - `Determinized`: the all-outcomes determinisation as an `MoMdp`.
+  - `Abstraction`: MOVI on a smaller MOSSP through a projection, cached. This is the
+    explicit-state form of `H^pdb_mossp`. Over `Determinized` with the identity projection
+    it is the exact multi-objective determinisation, which the paper's `H_mo` family
+    (`H^comax_mo`, `H^pdb_mo`) approximates.
+  - The factored heuristics themselves (`h^max`, comax, canonical PDBs over patterns of
+    variables) need a factored model, which this crate does not have.
+
+#### Paper table
+
+| Paper | Here | Status |
+|---|---|---|
+| MOSSP `(S, s0, G, A, P, C)`, `C(a) in R^n_{>=0}` | `MoMdp<N>` plus a `Goal`; costs per state and action | matches; a cost depends on the state too, as for `Mdp` |
+| Coverage set: CCS (Section 2), computed by LP with `lambda` | `prune`: `lambda` = `Objectives::margin` (default `10 * epsilon`, the paper's 0.01 for epsilon 0.001); closed form for two objectives, the dual LP for more | matches; candidates are removed one at a time against the remaining set |
+| Distance `D`: Hausdorff with "some metric such as Euclidean" (eq. 6) | Hausdorff under the max-norm, with `b` counted as a member | deliberate: no square root; with one objective it is `abs(V - V')` like the scalar residual |
+| Bellman backup `Q = {C(a)} (+) sum_s' P V(s')` (eq. 4, 5) | `q_value`: set sums over successors one at a time, CCS-pruned after each | matches; `CCS(A + B) = CCS(CCS(A) + CCS(B))` |
+| Bounded sum `(+)_B` (eq. 9): a sum not `<= b` becomes `b`; `CS_B` keeps `b` (eq. 7, 8) | same, with `b` as a per-action marker outside the vector list | matches |
+| `P * b` inside the sum stays a vector `P b` | any sum with a `b` term is `b` | deliberate: equal under reachability (such sums are dominated by the same sum with a proper vector `<= b`). With dead ends, it excludes policies that risk one, like `DeadEnds::Infinite`, where the paper's form would keep `x + p b` as a proper-looking vector |
+| Algorithm 2 line 7: remove `b` at the end | `b` never enters the vector list | matches |
+| Algorithms 1 and 2, line 1: `while max res < epsilon` | `while max res >= epsilon` | typo in the paper: the loop must run while the residual is large |
+| MOVI: Jacobi, `V <- V_new` per sweep | Gauss-Seidel in place, over the reachable states, from `{0}` | deliberate: converges to the same fixed point, usually faster |
+| Reachability assumption; give-up transformation for dead ends (extra objective) | dead ends allowed: a state without actions, or with a `None` estimate, holds only `b` | deliberate: the give-up dimension is a model change the caller can make (const generics cannot add an objective) |
+| Weak improper policy assumption (Assumption 1) with bound `b` | `Objectives::bound`, required, finite | matches; documented as the caller's obligation |
+| Admissible heuristic: `H(s) <= V*(s)` as sets (Definition 4.1) | admissible for every weight (scalarised) | deliberate, see above; Definition 4.1 implies it |
+| Algorithm 3 (MOLAO*): expand one tip of `N`, MOVI to epsilon on its ancestors `Z`, `getActions` for `Pi`, stop when `N` has no tip | `molao_star`: same; the first tip in depth-first order | aligned: before stopping, one sweep over `N` must stay below epsilon and leave `N` unchanged |
+| Algorithm 4 (iMOLAO*): postorder DFS over `Pi`, back up, expand tips; `while tips or max res < epsilon` | `imolao_star`: reverse depth-first preorder (a postorder on the DFS tree) | aligned: the paper's `< epsilon` is the same typo as above. A pass below epsilon must also leave the graph unchanged, because a near tie can switch a greedy action onto a tip (found by the one-objective property test, where iMOLAO* stopped at 7.0 against an optimum of 14.39) |
+| Algorithm 5 (MOLRTDP): back up, sample a greedy action with an unsolved successor, sample an unsolved successor | `molrtdp`: uniform over those actions, then a successor from the whole distribution; a trial also ends at a state holding only `b`, and at `max_trial_length` | deliberate: with unsolved-only successors, a trial inside a cycle ends only at the cut-off (10 000 backups on a three-state problem); the whole distribution ends it at the first solved state, as LRTDP does |
+| `checkSolved`: residual test, successors under all greedy actions, label or back up `closed` in reverse | same | aligned: the check stores the backup it computes, so the actions it follows match the stored value (the paper computes the residual without storing it) |
+| Policy extraction "with the choice of a scalarising weight" (Barrett and Narayanan 2008) | the LP weight of each vertex at `s0`, nudged inward; the tagged action at `s0` | matches; nudging breaks ties on zero-weight objectives |
+| `H^max_ideal`, `H^pdb2/3_ideal` | `IdealPoint` over any scalar heuristics | analogue: the factored `h^max` and PDBs are not here |
+| `H^comax_mo`, `H^pdb_mo` (Geißer et al. 2022 on the determinisation) | `Abstraction` over `Determinized` (exact determinised CCS) | analogue: the exact value these heuristics bound from below |
+| `H^pdb_mossp` (MO topological VI per projection, combined by comax) | `Abstraction` over a caller-provided abstract MOSSP | analogue: one abstraction; no pattern selection, no comax over several |
+| Experiments (Tables 1 and 2: coverage, heuristic error; LRTDP + `H^pdb2_mossp` best) | not reproduced: the benchmark domains are PPDDL and need a front end | out of scope; `benches/planners.rs` group "bi-objective corridor 30" times the four algorithms |
+
+A dead end found by expanding a tip changes the tip's value from its estimate to `b`. The
+backup reports that as a residual. Reporting 0, as for other dead ends, let MOLRTDP label
+the initial state solved at 9.44 against an optimum of 13.6.
+
+#### Performance
+
+The cost of a backup grows with the size of the value sets, and the transient sets of MOVI
+iterates are much larger than the final CCS:
+
+- truncated policies ("loop `k` times, then exit") add vertices that merge only once they
+  are closer than the margin;
+- a trap whose value climbs towards `b` adds a vertex per climbing step to every state
+  that can reach it, until the climb reaches `b`;
+- with three objectives, set sums of curves become surfaces with up to `|A| |B|` vertices.
+
+On one six-state, three-objective instance, MOVI took 0.1 s with margin `1e-2`, 3.6 s with
+`1e-3` and over 100 s with `1e-4`. The margin and a tight `b` are therefore the main
+performance settings, as the paper's experiments suggest (`lambda = 0.01`, and slow PDBs
+on ExBw-3d with improper policies).
+
+Bench "bi-objective corridor 30" (release, epsilon `1e-4`, three actions per cell): MOVI
+51 ms, MOLAO* 170 ms, iMOLAO* 30 ms, MOLRTDP 92 ms. Every state is relevant here, so the
+heuristic searches save nothing over MOVI. MOLAO* pays for repeated value iteration on
+ancestor sets, as classic LAO* does.
+
+#### Tests
+
+- The paper's Figures 1 and 2, a dead end risked by a free action, an unsolvable problem, a
+  goal initial state, invalid input. All four algorithms are run, and every returned policy
+  is evaluated exactly.
+- The margin regression from review: one state with `a = [1, 0]` (success 0.5) and
+  `c = [0, 1]` (success 0.9). Truncated "`c` once, then `a`" points sit about `0.1 *
+  residual` below the hull edge, and exactly two policies must come back for
+  `epsilon` in `{1e-4, 1e-6, 1e-9}`.
+- Brute-force oracle (`tests/it/mo/oracle.rs`): it enumerates every deterministic policy,
+  checks properness by graph search and evaluates each policy by Gaussian elimination.
+  - On random bi-objective MOSSPs with traps (epsilon `1e-6`), MOVI returns exactly the
+    lower-left hull vertices (monotone chain). Every search, with each of the three
+    heuristics, agrees with them on 41 weights.
+  - On three objectives (epsilon `1e-4`, tolerance `1e-2`), the fronts agree on a
+    45-weight simplex grid.
+  - Every returned policy is proper, and its exact value matches the reported one within
+    the tolerance.
+- One objective: MOVI, MOLAO*, iMOLAO* and MOLRTDP find the value of `lao_star` and
+  `lrtdp` on random SSPs with traps.
+- Unit tests: the pruning against a monotone-chain hull on 300 random 2D sets, LP margins,
+  the bounded sum, and the Hausdorff distance with `b`.
+
 ### Belief space (milestone 4)
 
 POMCP (Silver and Veness 2010) and DESPOT (Somani, Ye, Hsu and Lee 2013; Ye et al. 2017)
@@ -605,6 +732,8 @@ overestimates are allowed (they only void the optimality bound). Neither panics.
    solve or iteration); discounted MDP adapter.
 4. Belief-space trait set; POMCP; DESPOT; belief tracking and tree reuse between
    decisions (done). Next: decide whether this becomes `pomdp-search`.
+5. Multi-objective SSPs: MOVI, MOLAO*, iMOLAO*, MOLRTDP and the explicit-state
+   heuristics of Chen, Trevizan and Thiébaux 2023 (done).
 
 ## Cross-crate needs
 
@@ -652,6 +781,10 @@ overestimates are allowed (they only void the optimality bound). Neither panics.
 - Somani, Ye, Hsu, Lee. *DESPOT: Online POMDP planning with regularization.* NeurIPS 2013.
 - Ye, Somani, Hsu, Lee. *DESPOT: Online POMDP planning with regularization.* JAIR 58,
   2017.
+- Chen, Trevizan, Thiébaux. *Heuristic search for multi-objective probabilistic planning.*
+  AAAI 2023; arXiv 2303.14363.
+- Roijers, Whiteson. *Multi-objective decision making.* Morgan & Claypool, 2017.
+- Barrett, Narayanan. *Learning all optimal policies with multiple criteria.* ICML 2008.
 - Kaelbling, Littman, Cassandra. *Planning and acting in partially observable stochastic
   domains.* Artificial Intelligence 101, 1998. (Tiger)
 - Smith, Simmons. *Heuristic search value iteration for POMDPs.* UAI 2004. (RockSample)
