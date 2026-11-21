@@ -155,6 +155,11 @@ mod solution;
 mod space;
 mod value_iteration;
 
+/// Doctests for the code examples in README.md (not part of the API).
+#[cfg(doctest)]
+#[doc = include_str!("../README.md")]
+mod readme_doctests {}
+
 pub use belief::{BeliefFilter, BeliefUpdate, update_belief};
 pub use bounds::brtdp::{BrtdpConfig, brtdp};
 pub use bounds::frtdp::{FrtdpConfig, frtdp};

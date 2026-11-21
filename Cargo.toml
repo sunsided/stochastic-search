@@ -10,6 +10,20 @@ repository = "https://github.com/sunsided/stochastic-search"
 readme = "README.md"
 keywords = ["mdp", "planning", "pomdp", "rtdp", "search"]
 categories = ["algorithms", "science", "no-std"]
+# Repository tooling stays out of the published crate.
+exclude = [
+    ".github/",
+    "fuzz/",
+    "scripts/",
+    ".pre-commit-config.yaml",
+    "Taskfile.dist.yaml",
+    "_typos.toml",
+    "clippy.toml",
+    "codecov.yml",
+    "deny.toml",
+    "release-plz.toml",
+    "rustfmt.toml",
+]
 
 [dependencies]
 # The shared Goal, Heuristic and Budget traits of the planning crates.
