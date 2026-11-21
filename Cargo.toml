@@ -1,7 +1,7 @@
 [package]
 name = "stochastic-search"
 description = "Planning under probabilistic outcomes for MDPs and POMDPs: LAO*, iLAO*, CG-iLAO*, RTDP, LRTDP, BRTDP, FRTDP, VPI-RTDP, POMCP, DESPOT and multi-objective MOLAO*, iMOLAO* and MOLRTDP"
-version = "0.0.0"
+version = "0.1.0"
 edition = "2024"
 rust-version = "1.85"
 authors = ["Markus Mayer <widemeadows@gmail.com>"]
@@ -26,8 +26,7 @@ exclude = [
 ]
 
 [dependencies]
-# The shared Goal, Heuristic and Budget traits of the planning crates. Local builds use the
-# sibling checkout through the planning hub's [patch.crates-io] (CONTRIBUTING.md).
+# The shared Goal, Heuristic and Budget traits of the planning crates.
 search-core = "0.3"
 # Hash table for state interning under no_std; see docs/design.md.
 hashbrown = { version = "0.17", default-features = false, features = ["default-hasher"] }
