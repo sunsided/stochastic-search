@@ -496,7 +496,13 @@ separate `Objectives<N>`.
   - `Abstraction`: MOVI on a smaller MOSSP through a projection, cached. This is the
     explicit-state form of `H^pdb_mossp`. Over `Determinized` with the identity projection
     it is the exact multi-objective determinisation, which the paper's `H_mo` family
-    (`H^comax_mo`, `H^pdb_mo`) approximates.
+    (`H^comax_mo`, `H^pdb_mo`) approximates. Its inner bound caps the abstract problem,
+    and determinised path costs can exceed every concrete expected cost. Take a state
+    with cost `[6, 6]` into `[7, 0]` or `[0, 7]` with probability 0.5 each, and
+    `b = [10, 10]`: both paths overshoot `b`, yet the optimum is `[9.5, 9.5]`. An empty
+    abstract set therefore estimates blind rather than proving a dead end (test
+    `abstraction_capped_by_its_bound_is_not_a_dead_end`), and callers should give the
+    inner run a bound above the abstract path costs.
   - The factored heuristics themselves (`h^max`, comax, canonical PDBs over patterns of
     variables) need a factored model, which this crate does not have.
 
@@ -525,6 +531,10 @@ separate `Objectives<N>`.
 | `H^comax_mo`, `H^pdb_mo` (Geißer et al. 2022 on the determinisation) | `Abstraction` over `Determinized` (exact determinised CCS) | analogue: the exact value these heuristics bound from below |
 | `H^pdb_mossp` (MO topological VI per projection, combined by comax) | `Abstraction` over a caller-provided abstract MOSSP | analogue: one abstraction; no pattern selection, no comax over several |
 | Experiments (Tables 1 and 2: coverage, heuristic error; LRTDP + `H^pdb2_mossp` best) | not reproduced: the benchmark domains are PPDDL and need a front end | out of scope; `benches/planners.rs` group "bi-objective corridor 30" times the four algorithms |
+
+`Status::Unsolvable` needs a converged run whose initial value holds only `b`. A run
+stopped by its budget stays `BudgetExhausted` even with an empty set, because transient
+sets can gain vectors later (test `budget_stop_is_not_a_verdict`).
 
 A dead end found by expanding a tip changes the tip's value from its estimate to `b`. The
 backup reports that as a residual. Reporting 0, as for other dead ends, let MOLRTDP label

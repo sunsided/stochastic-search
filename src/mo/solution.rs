@@ -55,10 +55,11 @@ pub struct MoSolution<S, A, const N: usize> {
 
 impl<S, A, const N: usize> MoSolution<S, A, N> {
     /// Wraps the space of a finished run and extracts one policy per vector of the initial
-    /// state's value. A run whose initial value holds no vector besides `b` is
-    /// [`Status::Unsolvable`].
+    /// state's value. A converged run whose initial value holds no vector besides `b` is
+    /// [`Status::Unsolvable`]; a run stopped by its budget keeps
+    /// [`Status::BudgetExhausted`], since its sets may still gain vectors.
     pub(crate) fn new(space: Space<S, A, N>, initial: Id, status: Status, counters: Stats) -> Self {
-        let status = if space.node(initial).value.points.is_empty() {
+        let status = if status == Status::Converged && space.node(initial).value.points.is_empty() {
             Status::Unsolvable
         } else {
             status

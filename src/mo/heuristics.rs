@@ -108,7 +108,7 @@ where
 ///
 /// let determinized = Determinized(&Coin);
 /// let goal = |state: &u8| *state == 3;
-/// let mut heuristic = Abstraction::new(&determinized, |state: &u8| *state, &goal, Objectives::new([10.0; 2]));
+/// let mut heuristic = Abstraction::new(&determinized, |state: &u8| *state, &goal, Objectives::new([100.0; 2]));
 ///
 /// let mut estimate = heuristic.estimate(&0).unwrap();
 /// estimate.sort_by(|a, b| a[0].total_cmp(&b[0]));
@@ -148,10 +148,16 @@ where
 ///
 /// Admissible (in the scalarised sense of the [module docs](crate::mo)) when the
 /// abstraction is a relaxation: for every weight, the optimal weighted cost from
-/// `project(s)` is at most the one from `s`. A projected state without a proper policy is
-/// reported as a dead end, which needs every proper concrete policy to have a proper
-/// abstract counterpart. If the inner run fails or exhausts its budget, the estimate falls
-/// back to the zero vector.
+/// `project(s)` is at most the one from `s`. And when the bound of `objectives` is large
+/// enough to contain the abstract optimal vectors. That bound caps the abstract problem,
+/// not the concrete one: a determinisation's path costs can exceed every concrete expected
+/// cost, so pass a bound above the abstract path costs, not the concrete `b`. A vector cut
+/// off by the inner bound is missing from the estimate, which then overestimates for the
+/// weights that favour it.
+///
+/// The estimate is never `None`. An abstract state without a vector under the inner bound,
+/// an inner run that fails, and one that exhausts its budget all fall back to the zero
+/// vector.
 ///
 /// # Example
 ///
@@ -205,11 +211,12 @@ where
             self.solve(abstract_state.clone());
         }
 
-        let Some(value) = self.table.get(&abstract_state) else {
-            return Some(alloc::vec![[0.0; N]]);
-        };
-
-        (!value.is_empty()).then(|| value.clone())
+        match self.table.get(&abstract_state) {
+            Some(value) if !value.is_empty() => Some(value.clone()),
+            // No proper vector under the inner bound proves nothing about the concrete
+            // problem (its costs can exceed the abstract bound); fall back to blind.
+            _ => Some(alloc::vec![[0.0; N]]),
+        }
     }
 }
 
@@ -227,7 +234,7 @@ where
             return;
         };
 
-        if !solution.is_converged() && solution.status() != crate::Status::Unsolvable {
+        if solution.status() == crate::Status::BudgetExhausted {
             return;
         }
 

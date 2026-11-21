@@ -6,3 +6,4 @@
 # everyone who runs the test benefits from these saved cases.
 cc deef1fc3a722b09999550025a05b9a88a47948f897f1df792cb1df1769413b8e # shrinks to states = 5, seed = 18373465518982164822
 cc bc66549b65c83a2949b668a4adf5c8c87046e8175dcbe2eacee4d84d9d36f170 # shrinks to states = 2, seed = 13644261567531283532
+cc 72185ea571c6efc3f156b172cf4f7afaa41106ca4c22a0ee4610a9eac5f1d382 # shrinks to states = 6, seed = 13879454249277044764

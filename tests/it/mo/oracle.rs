@@ -274,9 +274,12 @@ pub fn hull(vectors: &[[f64; 2]], tolerance: f64) -> Vec<[f64; 2]> {
         .iter()
         .copied()
         .filter(|v| {
-            !vectors
-                .iter()
-                .any(|u| u[0] <= v[0] && u[1] <= v[1] && (u[0] < v[0] - 1e-9 || u[1] < v[1] - 1e-9))
+            !vectors.iter().any(|u| {
+                // Dominance up to rounding: evaluations of equal values differ in the last bits.
+                u[0] <= v[0] + 1e-9
+                    && u[1] <= v[1] + 1e-9
+                    && (u[0] < v[0] - 1e-9 || u[1] < v[1] - 1e-9)
+            })
         })
         .collect();
     front.sort_by(|a, b| a[0].total_cmp(&b[0]));

@@ -343,3 +343,51 @@ fn molrtdp_is_deterministic() {
     assert_eq!(front(&a), front(&b));
     assert_eq!(a.stats(), b.stats());
 }
+
+/// A budget stop never claims unsolvability, even when the initial value has no vector
+/// yet.
+#[test]
+fn budget_stop_is_not_a_verdict() {
+    let table = MoTable {
+        actions: vec![
+            vec![action([1.0, 0.0], &[(1, 1.0)])],
+            vec![action([1.0, 1.0], &[(2, 1.0)])],
+            Vec::new(),
+        ],
+        goal: 2,
+    };
+    let goal = |state: &usize| *state == 2;
+    for algorithm in Algorithm::ALL {
+        let config = Config::default().with_budget(stochastic_search::Limits::backups(1));
+        let solution = algorithm
+            .solve(&table, 0, &goal, Zero, Objectives::new([5.0; 2]), config)
+            .expect("valid input");
+        assert_eq!(solution.status(), Status::BudgetExhausted, "{algorithm:?}");
+    }
+}
+
+/// Every determinised path overshoots the bound while the expected cost stays below it;
+/// the abstraction then estimates blind instead of proving a dead end.
+#[test]
+fn abstraction_capped_by_its_bound_is_not_a_dead_end() {
+    let table = MoTable {
+        actions: vec![
+            vec![action([6.0, 6.0], &[(1, 0.5), (2, 0.5)])],
+            vec![action([7.0, 0.0], &[(3, 1.0)])],
+            vec![action([0.0, 7.0], &[(3, 1.0)])],
+            Vec::new(),
+        ],
+        goal: 3,
+    };
+    let goal = |state: &usize| *state == 3;
+    let objectives = Objectives::new([10.0; 2]);
+    let determinized = Determinized(&table);
+    for algorithm in [Algorithm::Molao, Algorithm::Imolao, Algorithm::Molrtdp] {
+        let heuristic = Abstraction::new(&determinized, |state: &usize| *state, &goal, objectives);
+        let solution = algorithm
+            .solve(&table, 0, &goal, heuristic, objectives, Config::default())
+            .expect("valid input");
+        assert!(solution.is_converged(), "{algorithm:?}: {solution:?}");
+        assert_front(&front(&solution), &[[9.5, 9.5]], 1e-6);
+    }
+}
