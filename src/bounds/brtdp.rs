@@ -143,7 +143,7 @@ impl<B, O> From<Config<B, O>> for BrtdpConfig<B, O> {
 ///
 /// # Termination
 ///
-/// With the default [`Limits`](crate::Limits) budget the call always returns. With valid
+/// With the default [`Limits`] budget the call always returns. With valid
 /// bounds both converge to `V*` on the states trials keep visiting, so the gap at `initial`
 /// shrinks to `epsilon` on finite problems.
 ///

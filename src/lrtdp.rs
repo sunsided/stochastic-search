@@ -41,7 +41,7 @@ use crate::space::{Id, Problem, Space};
 ///
 /// # Guarantee
 ///
-/// When the status is [`Status::Converged`](crate::Status::Converged), with `V` the returned
+/// When the status is [`Status::Converged`], with `V` the returned
 /// values and `pi` the returned policy, on every state `s` reachable from `initial` under
 /// `pi` (the *envelope*):
 ///
@@ -64,13 +64,13 @@ use crate::space::{Id, Problem, Space};
 /// # Termination
 ///
 /// With the default [`Limits`](crate::Limits) budget the call always returns; an exhausted
-/// budget yields [`Status::BudgetExhausted`](crate::Status::BudgetExhausted), never a
+/// budget yields [`Status::BudgetExhausted`], never a
 /// verdict. Under [`DeadEnds::Infinite`](crate::DeadEnds::Infinite), a trap (a cycle that
 /// never reaches a goal) shows up as cut-off trials or as values that solved checks keep
 /// raising. LRTDP proves by graph analysis, after every cut-off trial and whenever the
 /// backup count has doubled since the last analysis, which stored states have no proper
 /// policy and makes them dead ends, so avoidable traps are avoided and an unavoidable one
-/// yields [`Status::Unsolvable`](crate::Status::Unsolvable).
+/// yields [`Status::Unsolvable`].
 /// With [`Limits::unlimited`](crate::Limits::unlimited), a run on an infinite state space, or
 /// one whose MDP violates the SSP assumptions (zero-cost cycles), may not return.
 ///
@@ -85,7 +85,7 @@ use crate::space::{Id, Problem, Space};
 ///
 /// # Errors
 ///
-/// Returns an [`Error`](crate::Error) for an invalid [`Config`], or for invalid MDP output or heuristic
+/// Returns an [`Error`] for an invalid [`Config`], or for invalid MDP output or heuristic
 /// estimates in the states the run touches.
 ///
 /// # Panics
@@ -212,8 +212,8 @@ where
     ///
     /// # Errors
     ///
-    /// Returns [`Error::InvalidConfig`](crate::Error::InvalidConfig) for an invalid
-    /// configuration and [`Error::InvalidHeuristic`](crate::Error::InvalidHeuristic) for an
+    /// Returns [`Error::InvalidConfig`] for an invalid
+    /// configuration and [`Error::InvalidHeuristic`] for an
     /// invalid estimate of `initial`.
     pub(crate) fn new(
         mdp: &'a M,
