@@ -57,16 +57,16 @@ stochastic-search = "0.1"
 
 ## Scope
 
-- Implemented: value iteration, RTDP, labeled RTDP (LRTDP), classic LAO*, iLAO* and CG-iLAO* for stochastic
+- Value iteration, RTDP, labeled RTDP (LRTDP), classic LAO*, iLAO* and CG-iLAO* for stochastic
   shortest path problems, with infinite or finite-penalty dead ends
-- Implemented: bounded RTDP (BRTDP), focused RTDP (FRTDP) and VPI-RTDP with lower and upper
+- Bounded RTDP (BRTDP), focused RTDP (FRTDP) and VPI-RTDP with lower and upper
   bounds and an upper-greedy policy; upper bounds must be finite, so infinite dead ends need
   a lower bound that proves them (or use a penalty)
-- Implemented: a generative POMDP model with online planners POMCP and anytime regularized
+- A generative POMDP model with online planners POMCP and anytime regularized
   DESPOT (Ye et al. 2017) over particle beliefs, with tree reuse between decisions, a
   particle filter with reinvigoration, POMCP exploration calibration, progress events and
   dedicated tree counters
-- Implemented: multi-objective SSPs (`MoMdp<N>`, cost vectors) with the algorithms of
+- Multi-objective SSPs (`MoMdp<N>`, cost vectors) with the algorithms of
   Chen, Trevizan and Thiébaux (2023): MOLAO*, iMOLAO* and MOLRTDP, with multi-objective
   value iteration as the reference. They return the convex coverage set of deterministic
   proper policies under the weak improper policy assumption (bound `b`). Heuristics: blind,
