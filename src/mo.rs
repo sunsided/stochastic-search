@@ -24,7 +24,7 @@
 //! backups preserve, and it is weaker than the paper's set domination (Definition 4.1),
 //! which the determinisation heuristic does not satisfy (see `docs/design.md`). Provided:
 //!
-//! - [`Zero`](crate::Zero): the blind heuristic `{0}`.
+//! - [`ZeroVector`]: the blind heuristic `{0}`.
 //! - [`IdealPoint`]: one single-objective heuristic per objective, combined into the one
 //!   vector `[h_1(s), ..., h_N(s)]` (the paper's `H_ideal`).
 //! - [`Abstraction`]: MOVI on a smaller MOSSP, looked up through a projection (the
@@ -37,7 +37,7 @@
 //! `[0, 1]`; each reaches its goal with probability 0.5 and stays in `s0` otherwise.
 //!
 //! ```
-//! use stochastic_search::{Config, MoMdp, Objectives, Zero, molrtdp};
+//! use stochastic_search::{Config, MoMdp, Objectives, ZeroVector, molrtdp};
 //!
 //! struct Figure1;
 //!
@@ -63,7 +63,7 @@
 //!
 //! let goal = |state: &&str| state.starts_with('g');
 //! let objectives = Objectives::new([100.0, 100.0]);
-//! let solution = molrtdp(&Figure1, "s0", &goal, Zero, objectives, Config::default())?;
+//! let solution = molrtdp(&Figure1, "s0", &goal, ZeroVector, objectives, Config::default())?;
 //!
 //! assert!(solution.is_converged());
 //! let mut front: Vec<[f64; 2]> = solution.policies().map(|policy| *policy.value()).collect();
@@ -83,7 +83,7 @@ mod simplex;
 mod solution;
 mod space;
 
-pub use heuristics::{Abstraction, Determinized, IdealPoint};
+pub use heuristics::{Abstraction, Determinized, IdealPoint, ZeroVector};
 pub use lao::{imolao_star, molao_star};
 pub use lrtdp::molrtdp;
 pub use movi::mo_value_iteration;

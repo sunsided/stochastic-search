@@ -3,8 +3,8 @@
 
 use proptest::prelude::*;
 use stochastic_search::{
-    Abstraction, Config, Determinized, IdealPoint, Limits, Objectives, Zero, heuristic_fn,
-    lao_star, lrtdp, value_iteration,
+    Abstraction, Config, Determinized, IdealPoint, Limits, Objectives, Zero, ZeroVector,
+    heuristic_fn, lao_star, lrtdp, value_iteration,
 };
 
 use super::oracle::{
@@ -164,7 +164,7 @@ fn solve_all<const N: usize>(
     let mut fronts = Vec::new();
     for algorithm in Algorithm::ALL {
         let solutions = [
-            algorithm.solve(table, 0, &goal, Zero, objectives, config),
+            algorithm.solve(table, 0, &goal, ZeroVector, objectives, config),
             algorithm.solve(table, 0, &goal, ideal_point(table), objectives, config),
             algorithm.solve(
                 table,
@@ -265,7 +265,7 @@ proptest! {
 
         for algorithm in Algorithm::ALL {
             let solution = algorithm
-                .solve(&Scalar(&table), 0, &goal, Zero, Objectives::new([1e4]), config)
+                .solve(&Scalar(&table), 0, &goal, ZeroVector, Objectives::new([1e4]), config)
                 .expect("valid input");
             prop_assert!(solution.is_converged());
             let front = front(&solution);

@@ -45,7 +45,7 @@
 //! - [`molrtdp()`], [`molao_star()`], [`imolao_star()`] and [`mo_value_iteration()`]:
 //!   multi-objective SSPs (Chen, Trevizan and Thiébaux 2023) over an [`MoMdp`] with cost
 //!   vectors. They return an [`MoSolution`], a convex coverage set of deterministic
-//!   policies; heuristics are [`Zero`], [`IdealPoint`] and [`Abstraction`] (also over
+//!   policies; heuristics are [`ZeroVector`], [`IdealPoint`] and [`Abstraction`] (also over
 //!   [`Determinized`]).
 //! - [`Pomcp`] and [`Despot`]: the same planners kept between decisions, reusing the subtree
 //!   after the action taken and the observation received; [`update_belief`] is POMCP's
@@ -66,8 +66,8 @@
 //! - The optimality guarantees need an admissible heuristic (never above the optimal
 //!   expected cost). Inadmissible ones never panic; they only void the guarantee.
 //!
-//! [`Zero`] is this crate's own `f64` heuristic: `search-core`'s zero heuristic covers only
-//! its integer-like cost types.
+//! [`Zero`], the blind heuristic, is `search-core`'s too; it estimates `0.0` for `f64`.
+//! The multi-objective algorithms take cost-vector sets and use [`ZeroVector`] instead.
 //!
 //! ## Dead ends
 //!
@@ -169,7 +169,7 @@ pub use lao::lao_star;
 pub use lrtdp::lrtdp;
 pub use mo::{
     Abstraction, Determinized, IdealPoint, MoMdp, MoPolicy, MoSolution, MoSolveResult, Objectives,
-    imolao_star, mo_value_iteration, molao_star, molrtdp,
+    ZeroVector, imolao_star, mo_value_iteration, molao_star, molrtdp,
 };
 pub use model::{Goal, Heuristic, HeuristicFn, Mdp, Zero, heuristic_fn};
 pub use observer::{Event, Observer, ObserverFn, observer_fn};

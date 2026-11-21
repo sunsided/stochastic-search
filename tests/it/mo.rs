@@ -6,7 +6,8 @@ mod random;
 
 use stochastic_search::{
     Abstraction, Config, DeadEnds, Determinized, Error, Heuristic, MoMdp, MoSolution,
-    MoSolveResult, Objectives, Status, Zero, imolao_star, mo_value_iteration, molao_star, molrtdp,
+    MoSolveResult, Objectives, Status, ZeroVector, imolao_star, mo_value_iteration, molao_star,
+    molrtdp,
 };
 
 use oracle::{MoAction, MoTable, assert_policies_evaluate};
@@ -88,7 +89,7 @@ fn assert_all_solve<const N: usize>(table: &MoTable<N>, bound: [f64; N], expecte
     for algorithm in Algorithm::ALL {
         let config = Config::default().with_epsilon(EPSILON);
         let solution = algorithm
-            .solve(table, 0, &goal, Zero, Objectives::new(bound), config)
+            .solve(table, 0, &goal, ZeroVector, Objectives::new(bound), config)
             .expect("valid input");
         assert!(solution.is_converged(), "{algorithm:?}: {solution:?}");
         assert_front(&front(&solution), expected, 1e-5);
@@ -174,7 +175,14 @@ fn truncated_mixtures_are_pruned() {
             let config = Config::default().with_epsilon(epsilon);
             let goal = |state: &usize| *state == 1;
             let solution = algorithm
-                .solve(&table, 0, &goal, Zero, Objectives::new([50.0; 2]), config)
+                .solve(
+                    &table,
+                    0,
+                    &goal,
+                    ZeroVector,
+                    Objectives::new([50.0; 2]),
+                    config,
+                )
                 .expect("valid input");
             assert_front(&front(&solution), &[[0.0, 1.0 / 0.9], [2.0, 0.0]], 1e-3);
             assert_policies_evaluate(&table, &solution, 0, 1e-3);
@@ -203,7 +211,7 @@ fn unsolvable() {
                 &table,
                 0,
                 &goal,
-                Zero,
+                ZeroVector,
                 Objectives::new([5.0; 2]),
                 Config::default(),
             )
@@ -227,7 +235,7 @@ fn goal_initial_state() {
                 &table,
                 0,
                 &goal,
-                Zero,
+                ZeroVector,
                 Objectives::new([5.0; 2]),
                 Config::default(),
             )
@@ -252,7 +260,7 @@ fn invalid_input() {
                 &table,
                 0,
                 &goal,
-                Zero,
+                ZeroVector,
                 Objectives::new([5.0; 2]),
                 Config::default(),
             )
@@ -261,13 +269,20 @@ fn invalid_input() {
 
         let bad_bound = Objectives::new([5.0, f64::NAN]);
         let error = algorithm
-            .solve(&table, 0, &goal, Zero, bad_bound, Config::default())
+            .solve(&table, 0, &goal, ZeroVector, bad_bound, Config::default())
             .expect_err("bad bound");
         assert!(matches!(error, Error::InvalidConfig { .. }));
 
         let penalty = Config::default().with_dead_ends(DeadEnds::Penalty(3.0));
         let error = algorithm
-            .solve(&table, 0, &goal, Zero, Objectives::new([5.0; 2]), penalty)
+            .solve(
+                &table,
+                0,
+                &goal,
+                ZeroVector,
+                Objectives::new([5.0; 2]),
+                penalty,
+            )
             .expect_err("penalty");
         assert!(matches!(error, Error::InvalidConfig { .. }));
     }
@@ -333,7 +348,7 @@ fn molrtdp_is_deterministic() {
             &table,
             0,
             &goal,
-            Zero,
+            ZeroVector,
             Objectives::new([random::BOUND; 2]),
             Config::default().with_seed(9),
         )
@@ -360,7 +375,14 @@ fn budget_stop_is_not_a_verdict() {
     for algorithm in Algorithm::ALL {
         let config = Config::default().with_budget(stochastic_search::Limits::backups(1));
         let solution = algorithm
-            .solve(&table, 0, &goal, Zero, Objectives::new([5.0; 2]), config)
+            .solve(
+                &table,
+                0,
+                &goal,
+                ZeroVector,
+                Objectives::new([5.0; 2]),
+                config,
+            )
             .expect("valid input");
         assert_eq!(solution.status(), Status::BudgetExhausted, "{algorithm:?}");
     }

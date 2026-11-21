@@ -10,8 +10,8 @@ use rand_core::Rng;
 use stochastic_search::{
     BeliefFilter, BrtdpConfig, Config, Despot, DespotConfig, FrtdpConfig, Limits, Mdp, MoMdp,
     Objectives, Pomcp, PomcpConfig, Pomdp, RolloutPolicy, SplitMix64, Step, VpiRtdpConfig, Zero,
-    brtdp, cg_ilao_star, despot, frtdp, heuristic_fn, ilao_star, imolao_star, lao_star, lrtdp,
-    mo_value_iteration, molao_star, molrtdp, pomcp, unit_interval, update_belief, vpi_rtdp,
+    ZeroVector, brtdp, cg_ilao_star, despot, frtdp, heuristic_fn, ilao_star, imolao_star, lao_star,
+    lrtdp, mo_value_iteration, molao_star, molrtdp, pomcp, unit_interval, update_belief, vpi_rtdp,
 };
 
 /// Runs every benchmark in this file with criterion's command-line flags.
@@ -352,19 +352,19 @@ fn bench_mo(criterion: &mut Criterion) {
     });
     group.bench_function("molao*", |bencher| {
         bencher.iter(|| {
-            let solution = molao_star(&MoCorridor, 0, &goal, Zero, objectives, config);
+            let solution = molao_star(&MoCorridor, 0, &goal, ZeroVector, objectives, config);
             black_box(solution.expect("valid input").policies().len())
         });
     });
     group.bench_function("imolao*", |bencher| {
         bencher.iter(|| {
-            let solution = imolao_star(&MoCorridor, 0, &goal, Zero, objectives, config);
+            let solution = imolao_star(&MoCorridor, 0, &goal, ZeroVector, objectives, config);
             black_box(solution.expect("valid input").policies().len())
         });
     });
     group.bench_function("molrtdp", |bencher| {
         bencher.iter(|| {
-            let solution = molrtdp(&MoCorridor, 0, &goal, Zero, objectives, config);
+            let solution = molrtdp(&MoCorridor, 0, &goal, ZeroVector, objectives, config);
             black_box(solution.expect("valid input").policies().len())
         });
     });

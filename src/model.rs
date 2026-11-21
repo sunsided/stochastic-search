@@ -6,14 +6,13 @@
 //! one MDP can be solved for many goals with many heuristics. [`Goal`] is implemented for
 //! plain closures, [`Heuristic`] for closures wrapped in [`heuristic_fn`].
 //!
-//! [`Goal`], [`Heuristic`], [`heuristic_fn`] and [`HeuristicFn`] are `search-core`'s, so a
-//! heuristic written for one planning crate works with the others. [`Mdp`] and [`Zero`] stay
-//! here: the MDP shape is specific to this crate, and `search-core`'s zero heuristic covers
-//! only its integer-like `Cost` types, not `f64`.
+//! [`Goal`], [`Heuristic`], [`heuristic_fn`], [`HeuristicFn`] and the blind heuristic
+//! [`Zero`] are `search-core`'s, so a heuristic written for one planning crate works with the
+//! others. [`Mdp`] stays here: the MDP shape is specific to this crate.
 //!
 //! The heuristic contract is in the crate documentation, section "The heuristic contract".
 
-pub use search_core::{Goal, Heuristic, HeuristicFn, heuristic_fn};
+pub use search_core::{Goal, Heuristic, HeuristicFn, Zero, heuristic_fn};
 
 /// A finite Markov decision process with action costs.
 ///
@@ -74,17 +73,4 @@ pub trait Mdp {
         action: &Self::Action,
         emit: impl FnMut(Self::State, f64),
     );
-}
-
-/// The blind heuristic: estimates `0` everywhere. Admissible for every SSP.
-///
-/// Local to this crate because `search_core::Zero` covers only `search_core::Cost` types,
-/// which `f64` is not. Importing both under the name `Zero` clashes; rename one with `as`.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub struct Zero;
-
-impl<S> Heuristic<S, f64> for Zero {
-    fn estimate(&mut self, _state: &S) -> Option<f64> {
-        Some(0.0)
-    }
 }

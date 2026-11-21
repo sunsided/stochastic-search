@@ -70,7 +70,7 @@ use crate::space::Id;
 /// # Example
 ///
 /// ```
-/// use stochastic_search::{Config, MoMdp, Objectives, Zero, molao_star};
+/// use stochastic_search::{Config, MoMdp, Objectives, ZeroVector, molao_star};
 ///
 /// /// A corridor `0..=2`: `walk` costs `[2, 0]`, `drive` costs `[1, 1]`; both advance.
 /// struct Corridor;
@@ -90,7 +90,7 @@ use crate::space::Id;
 /// }
 ///
 /// let goal = |state: &u8| *state == 2;
-/// let solution = molao_star(&Corridor, 0, &goal, Zero, Objectives::new([10.0, 10.0]), Config::default())?;
+/// let solution = molao_star(&Corridor, 0, &goal, ZeroVector, Objectives::new([10.0, 10.0]), Config::default())?;
 ///
 /// // Walk twice [4, 0] or drive twice [2, 2]; mixing lies on the hull edge between them.
 /// assert_eq!(solution.policies().len(), 2);
@@ -141,7 +141,7 @@ where
 /// # Example
 ///
 /// ```
-/// use stochastic_search::{Config, MoMdp, Objectives, Zero, imolao_star};
+/// use stochastic_search::{Config, MoMdp, Objectives, ZeroVector, imolao_star};
 ///
 /// /// Retry with `[1, 0]` per attempt (success 0.5) or pay `[0, 3]` once.
 /// struct Retry;
@@ -166,7 +166,7 @@ where
 /// }
 ///
 /// let config = Config::default().with_epsilon(1e-8);
-/// let solution = imolao_star(&Retry, false, &|done: &bool| *done, Zero, Objectives::new([50.0, 50.0]), config)?;
+/// let solution = imolao_star(&Retry, false, &|done: &bool| *done, ZeroVector, Objectives::new([50.0, 50.0]), config)?;
 ///
 /// let mut front: Vec<[f64; 2]> = solution.policies().map(|policy| *policy.value()).collect();
 /// front.sort_by(|a, b| a[0].total_cmp(&b[0]));

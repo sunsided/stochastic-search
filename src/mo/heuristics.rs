@@ -11,11 +11,23 @@ use hashbrown::HashMap;
 use crate::config::Config;
 use crate::mo::movi::mo_value_iteration;
 use crate::mo::{MoMdp, Objectives};
-use crate::model::{Goal, Heuristic, Zero};
+use crate::model::{Goal, Heuristic};
 
 /// The blind multi-objective heuristic: the zero vector everywhere. Admissible for every
 /// MOSSP.
-impl<S, const N: usize> Heuristic<S, Vec<[f64; N]>> for Zero {
+///
+/// The cost-vector counterpart of [`Zero`](crate::Zero), which is `search-core`'s and
+/// covers scalar costs only.
+///
+/// ```
+/// use stochastic_search::{Heuristic, ZeroVector};
+///
+/// assert_eq!(Heuristic::<u8, Vec<[f64; 2]>>::estimate(&mut ZeroVector, &3), Some(vec![[0.0; 2]]));
+/// ```
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
+pub struct ZeroVector;
+
+impl<S, const N: usize> Heuristic<S, Vec<[f64; N]>> for ZeroVector {
     fn estimate(&mut self, _state: &S) -> Option<Vec<[f64; N]>> {
         Some(alloc::vec![[0.0; N]])
     }

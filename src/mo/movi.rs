@@ -8,10 +8,11 @@ use alloc::vec::Vec;
 use crate::budget::{Budget, Stats};
 use crate::config::Config;
 use crate::meter::{Halt, finish};
+use crate::mo::heuristics::ZeroVector;
 use crate::mo::run::Run;
 use crate::mo::solution::MoSolveResult;
 use crate::mo::{MoMdp, Objectives};
-use crate::model::{Goal, Zero};
+use crate::model::Goal;
 use crate::observer::Observer;
 use crate::space::Id;
 
@@ -89,13 +90,13 @@ where
     B: Budget<Stats>,
     O: Observer,
 {
-    let mut run = Run::new(mdp, initial, goal, Zero, objectives, config)?;
+    let mut run = Run::new(mdp, initial, goal, ZeroVector, objectives, config)?;
     let status = finish(run.solve_movi())?;
 
     Ok(run.into_solution(status))
 }
 
-impl<M, G, B, O, const N: usize> Run<'_, M, G, Zero, B, O, N>
+impl<M, G, B, O, const N: usize> Run<'_, M, G, ZeroVector, B, O, N>
 where
     M: MoMdp<N>,
     M::State: Clone + Eq + Hash,

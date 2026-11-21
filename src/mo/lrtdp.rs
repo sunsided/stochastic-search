@@ -60,7 +60,7 @@ use crate::space::Id;
 /// Three objectives: each action is free in one of them.
 ///
 /// ```
-/// use stochastic_search::{Config, MoMdp, Objectives, Zero, molrtdp};
+/// use stochastic_search::{Config, MoMdp, Objectives, ZeroVector, molrtdp};
 ///
 /// struct Three;
 ///
@@ -80,7 +80,7 @@ use crate::space::Id;
 /// }
 ///
 /// let objectives = Objectives::new([10.0; 3]);
-/// let solution = molrtdp(&Three, false, &|done: &bool| *done, Zero, objectives, Config::default())?;
+/// let solution = molrtdp(&Three, false, &|done: &bool| *done, ZeroVector, objectives, Config::default())?;
 ///
 /// assert_eq!(solution.policies().len(), 3);
 /// for policy in solution.policies() {

@@ -24,7 +24,8 @@ the multi-objective MOLAO*, iMOLAO* and MOLRTDP.
 
 - Shared traits: `Goal`, `Heuristic`, `heuristic_fn` and `Budget` come from
   `search-core` and are re-exported here. Breaking: `Budget` bounds are
-  now `Budget<Stats>`; `Zero` stays local because it is the `f64` heuristic.
+  now `Budget<Stats>`. `Zero` is `search-core`'s as well (it covers `f64`); the
+  multi-objective algorithms use the local `ZeroVector`.
 
 See [docs/design.md](docs/design.md) for the model, guarantees and milestones.
 

@@ -86,7 +86,8 @@ pub trait Heuristic<S, C = u32> { fn estimate(&mut self, state: &S) -> Option<C>
 pub trait Budget<T> { fn exhausted(&mut self, stats: &T) -> bool; }        // + impl for FnMut(&T) -> bool
 
 // Local:
-pub struct Zero; // Heuristic<S, f64>, estimates 0 everywhere
+pub struct ZeroVector; // Heuristic<S, Vec<[f64; N]>>, the zero vector everywhere
+// Zero (Heuristic<S, f64>, 0 everywhere) is search-core's, re-exported
 ```
 
 - `actions` emits every applicable action with its cost `c(s, a)`. Cost per state and
@@ -483,7 +484,8 @@ separate `Objectives<N>`.
   centre while it keeps half its margin, because corner weights tie on the zero-weight
   objectives. The policy takes the vertex's tagged action at `s0` and, at every state it
   reaches, the tagged action of the vector minimising `w . v`.
-- Heuristics are `Heuristic<S, Vec<[f64; N]>>`, and `Zero` implements it. Admissibility is
+- Heuristics are `Heuristic<S, Vec<[f64; N]>>`; `ZeroVector` is the blind one (`search-core`'s
+  `Zero` cannot get this impl here: both trait and type are foreign). Admissibility is
   scalarised: for every weight `w`, `min_{H(s)} w . u <= min_{V*(s)} w . v`. This is what
   CCS backups preserve, since `min_w` commutes with the CCS operator and with set sums. It
   is weaker than Definition 4.1 (set domination). Take a state that moves at zero cost to
@@ -747,18 +749,20 @@ overestimates are allowed (they only void the optimality bound). Neither panics.
 
 ## Cross-crate needs
 
-- `Goal`, `Heuristic`, `heuristic_fn`, `HeuristicFn` and `Budget` come from `search-core`
-  (adopted per its `MIGRATION.md`) and are re-exported at the crate root, so
+- `Goal`, `Heuristic`, `heuristic_fn`, `HeuristicFn`, `Zero` and `Budget` come from
+  `search-core` (adopted per its `MIGRATION.md`) and are re-exported at the crate root, so
   `stochastic_search::Heuristic` and friends keep working and a heuristic or budget
-  written for `heuristic-search` works here. `Zero` (for `f64`), `Limits`, `Stats` and
-  `Mdp` stay local. Breaking changes of the adoption:
+  written for `heuristic-search` works here. `Zero` became `search-core`'s once that
+  crate implemented `Heuristic<S, f64>` for it (0.1); the local copy is gone, and with it
+  the name clash on glob imports. `Limits`, `Stats`, `Mdp` and the multi-objective
+  `ZeroVector` stay local. Breaking changes of the adoption:
   - `Budget` is now `Budget<Stats>`: code naming the trait in bounds writes
     `B: Budget<Stats>` and `impl Budget<Stats> for MyBudget`. Closures and `Limits` are
     unaffected.
   - `Heuristic` gains a default type parameter (`C = u32`); this crate's algorithms still
     require `Heuristic<S, f64>`, which closures infer, so call sites are unchanged.
-  - Importing `search_core::Zero` next to `stochastic_search::Zero` clashes; the local one
-    is the `f64` heuristic.
+  - `stochastic_search::Zero` is now `search_core::Zero` (same unit struct, same derives
+    plus `Hash`), so the two names no longer clash.
 - `heuristic-search` is generic over `Cost`; this crate fixes `f64`. A shared heuristic
   trait must therefore stay generic in `C`, and integer-cost heuristics need a conversion
   adapter (`u32 -> f64` is lossless).
