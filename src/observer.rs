@@ -45,6 +45,20 @@ pub enum Event {
         /// Bellman backups so far.
         backups: u64,
     },
+    /// Periodic progress of a multi-objective algorithm ([`molrtdp`](crate::molrtdp()),
+    /// [`molao_star`](crate::molao_star()), [`imolao_star`](crate::imolao_star()),
+    /// [`mo_value_iteration`](crate::mo_value_iteration())), every
+    /// [`Config::progress_interval`](crate::Config) backups.
+    FrontProgress {
+        /// Bellman backups so far.
+        backups: u64,
+        /// States stored so far.
+        states: u64,
+        /// The number of cost vectors in the initial state's current value.
+        front: usize,
+        /// The Hausdorff distance moved by the most recent backup.
+        residual: f64,
+    },
     /// Periodic progress of a tree planner ([`pomcp`](crate::pomcp()),
     /// [`despot`](crate::despot())), every `progress_interval` simulations or explorations
     /// of its configuration.

@@ -13,7 +13,7 @@
 
 pub(crate) mod backup;
 mod dead_ends;
-mod expand;
+pub(crate) mod expand;
 
 use core::hash::{BuildHasher, Hash};
 

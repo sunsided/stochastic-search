@@ -2,7 +2,7 @@
 //!
 //! Planning under probabilistic outcomes: value iteration, RTDP, labeled RTDP, BRTDP, FRTDP,
 //! VPI-RTDP, LAO*, iLAO* and CG-iLAO* for
-//! fully observable problems; POMCP and DESPOT for partially observable ones.
+//! fully observable problems, MOLAO*, iMOLAO* and MOLRTDP for multi-objective ones; POMCP and DESPOT for partially observable ones.
 //!
 //! A problem is a stochastic shortest path (SSP) problem: reach a goal state with minimal
 //! expected total cost, where every action has a cost and a probability distribution over
@@ -42,6 +42,11 @@
 //!   over action-observation histories with rollouts.
 //! - [`despot()`]: anytime regularized DESPOT (Somani et al. 2013, Ye et al. 2017). Bound
 //!   guided search over a tree of `K` determinized scenarios.
+//! - [`molrtdp()`], [`molao_star()`], [`imolao_star()`] and [`mo_value_iteration()`]:
+//!   multi-objective SSPs (Chen, Trevizan and Thiébaux 2023) over an [`MoMdp`] with cost
+//!   vectors. They return an [`MoSolution`], a convex coverage set of deterministic
+//!   policies; heuristics are [`Zero`], [`IdealPoint`] and [`Abstraction`] (also over
+//!   [`Determinized`]).
 //! - [`Pomcp`] and [`Despot`]: the same planners kept between decisions, reusing the subtree
 //!   after the action taken and the observation received; [`update_belief`] is POMCP's
 //!   particle filter with reinvigoration.
@@ -139,6 +144,7 @@ mod ilao;
 mod lao;
 mod lrtdp;
 mod meter;
+pub mod mo;
 mod model;
 mod observer;
 mod pomcp;
@@ -161,6 +167,10 @@ pub use error::{Error, PROBABILITY_TOLERANCE};
 pub use ilao::ilao_star;
 pub use lao::lao_star;
 pub use lrtdp::lrtdp;
+pub use mo::{
+    Abstraction, Determinized, IdealPoint, MoMdp, MoPolicy, MoSolution, MoSolveResult, Objectives,
+    imolao_star, mo_value_iteration, molao_star, molrtdp,
+};
 pub use model::{Goal, Heuristic, HeuristicFn, Mdp, Zero, heuristic_fn};
 pub use observer::{Event, Observer, ObserverFn, observer_fn};
 pub use pomcp::{Pomcp, PomcpConfig, pomcp, pomcp_exploration};

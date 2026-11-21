@@ -7,6 +7,31 @@ use crate::observer::{Event, Observer};
 use crate::solution::Status;
 use crate::space::Space;
 
+/// The state counts a [`Meter`] copies into [`Stats`]: implemented by the scalar and the
+/// multi-objective state spaces.
+pub(crate) trait Counts {
+    /// The state type, which names the [`Halt`] of a budget check.
+    type State;
+
+    /// The number of interned states.
+    fn states(&self) -> u64;
+
+    /// The number of expanded states.
+    fn expanded(&self) -> u64;
+}
+
+impl<S, A> Counts for Space<S, A> {
+    type State = S;
+
+    fn states(&self) -> u64 {
+        self.len() as u64
+    }
+
+    fn expanded(&self) -> u64 {
+        Space::expanded(self)
+    }
+}
+
 /// Why a run stopped before converging.
 pub(crate) enum Halt<S> {
     /// The budget is exhausted; the run returns what it has.
@@ -83,9 +108,7 @@ impl<B: Budget<Stats>, O: Observer> Meter<B, O> {
         residual: f64,
     ) {
         self.sync(space);
-        self.next_progress = self.progress_interval.map_or(u64::MAX, |interval| {
-            self.stats.backups.saturating_add(interval)
-        });
+        self.schedule_progress();
         self.emit(Event::Progress {
             backups: self.stats.backups,
             states: self.stats.states,
@@ -94,9 +117,16 @@ impl<B: Budget<Stats>, O: Observer> Meter<B, O> {
         });
     }
 
+    /// Schedules the next progress event one interval after the current backup count.
+    pub(crate) fn schedule_progress(&mut self) {
+        self.next_progress = self.progress_interval.map_or(u64::MAX, |interval| {
+            self.stats.backups.saturating_add(interval)
+        });
+    }
+
     /// Copies the state counts of `space` into the stats.
-    pub(crate) fn sync<S, A>(&mut self, space: &Space<S, A>) {
-        self.stats.states = space.len() as u64;
+    pub(crate) fn sync<C: Counts>(&mut self, space: &C) {
+        self.stats.states = space.states();
         self.stats.expanded = space.expanded();
     }
 
@@ -105,7 +135,7 @@ impl<B: Budget<Stats>, O: Observer> Meter<B, O> {
     /// # Errors
     ///
     /// Returns [`Halt::Budget`] if the budget is exhausted.
-    pub(crate) fn check<S, A>(&mut self, space: &Space<S, A>) -> Result<(), Halt<S>> {
+    pub(crate) fn check<C: Counts>(&mut self, space: &C) -> Result<(), Halt<C::State>> {
         self.sync(space);
         if self.budget.exhausted(&self.stats) {
             return Err(Halt::Budget);
@@ -119,7 +149,7 @@ impl<B: Budget<Stats>, O: Observer> Meter<B, O> {
     /// # Errors
     ///
     /// Returns [`Halt::Budget`] if the budget is exhausted; the backup is then not counted.
-    pub(crate) fn charge_backup<S, A>(&mut self, space: &Space<S, A>) -> Result<(), Halt<S>> {
+    pub(crate) fn charge_backup<C: Counts>(&mut self, space: &C) -> Result<(), Halt<C::State>> {
         self.check(space)?;
         self.stats.backups += 1;
 

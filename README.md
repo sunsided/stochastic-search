@@ -1,6 +1,7 @@
 # stochastic-search
 
-Planning under probabilistic outcomes: LAO*, iLAO*, CG-iLAO*, RTDP, LRTDP, BRTDP, FRTDP, VPI-RTDP, POMCP and DESPOT.
+Planning under probabilistic outcomes: LAO*, iLAO*, CG-iLAO*, RTDP, LRTDP, BRTDP, FRTDP, VPI-RTDP, POMCP, DESPOT, and
+the multi-objective MOLAO*, iMOLAO* and MOLRTDP.
 
 ## Scope
 
@@ -13,6 +14,13 @@ Planning under probabilistic outcomes: LAO*, iLAO*, CG-iLAO*, RTDP, LRTDP, BRTDP
   DESPOT (Ye et al. 2017) over particle beliefs, with tree reuse between decisions, a
   particle filter with reinvigoration, POMCP exploration calibration, progress events and
   dedicated tree counters
+- Implemented: multi-objective SSPs (`MoMdp<N>`, cost vectors) with the algorithms of
+  Chen, Trevizan and Thiébaux (2023): MOLAO*, iMOLAO* and MOLRTDP, with multi-objective
+  value iteration as the reference. They return the convex coverage set of deterministic
+  proper policies under the weak improper policy assumption (bound `b`). Heuristics: blind,
+  ideal point of single-objective heuristics, and MOVI on an abstraction or on the
+  all-outcomes determinisation. The paper's factored heuristics (`h^max`, comax, PDBs) are
+  not implemented, because the crate has no factored model
 
 - Shared traits: `Goal`, `Heuristic`, `heuristic_fn` and `Budget` come from
   `search-core` and are re-exported here. Breaking: `Budget` bounds are

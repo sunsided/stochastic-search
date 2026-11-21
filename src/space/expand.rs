@@ -166,7 +166,7 @@ impl<S: Hash + Eq + Clone, A> Space<S, A> {
 }
 
 /// A distribution defect, before the state it belongs to is attached.
-enum Defect {
+pub(crate) enum Defect {
     /// A probability is NaN or outside `(0, 1]`.
     Probability(f64),
     /// The probabilities do not sum to 1 within the tolerance.
@@ -175,7 +175,7 @@ enum Defect {
 
 impl Defect {
     /// Turns the defect into an error at `state`.
-    fn at<S>(self, state: S) -> Error<S> {
+    pub(crate) fn at<S>(self, state: S) -> Error<S> {
         match self {
             Self::Probability(probability) => Error::InvalidProbability { state, probability },
             Self::Sum(sum) => Error::ProbabilitySum { state, sum },
@@ -185,7 +185,7 @@ impl Defect {
 
 /// Checks that every probability lies in `(0, 1]` and that they sum to 1 within
 /// [`PROBABILITY_TOLERANCE`].
-fn validate_distribution<S>(outcomes: &[(S, f64)]) -> Result<(), Defect> {
+pub(crate) fn validate_distribution<S>(outcomes: &[(S, f64)]) -> Result<(), Defect> {
     let mut sum = 0.0;
     for &(_, p) in outcomes {
         if !(p > 0.0 && p <= 1.0) {

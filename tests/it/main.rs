@@ -5,6 +5,7 @@ mod belief;
 mod bounds;
 mod events;
 mod fixtures;
+mod mo;
 mod oracle;
 mod pbvi;
 mod planners;
