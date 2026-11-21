@@ -1,0 +1,21 @@
+# Checks out every sibling that Cargo.toml reaches through `path = "../<sibling>"` into
+# $GITHUB_WORKSPACE/<sibling>, next to this crate, so the path dependencies resolve as in a
+# local checkout. A local action is only on disk once the crate is, so each job first checks
+# out this repository with `path: stochastic-search`, then calls
+# `uses: ./stochastic-search/.github/actions/checkout-siblings`, and sets
+# `defaults.run.working-directory: stochastic-search`.
+# Siblings are checked out at their default branch. Add a step per new sibling path dependency.
+# Public siblings need no token; a private one needs a `token` input fed from
+# `secrets.SIBLING_REPOS_TOKEN` (composite actions cannot read secrets themselves).
+name: Checkout siblings
+description: Check out the sibling path dependencies of stochastic-search next to it
+
+runs:
+  using: composite
+  steps:
+    - name: Check out search-core
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        repository: sunsided/search-core
+        path: search-core
+        persist-credentials: false
