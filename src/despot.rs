@@ -1316,6 +1316,65 @@ mod tests {
         check_bounds(0.5, 200);
     }
 
+    /// Checks that bounds stay ordered at every node of `search`, and that every leaf equals
+    /// a node built afresh in `fresh`, a search under the same root, bit for bit.
+    fn assert_leaves_match_a_fresh_build<U, V>(
+        search: &Despot<'_, Coin, UniformRandom, U>,
+        fresh: &mut Despot<'_, Coin, UniformRandom, V>,
+    ) where
+        U: FnMut(&bool) -> f64,
+        V: FnMut(&bool) -> f64,
+    {
+        for node in &search.tree.nodes {
+            assert!(node.ell <= node.mu + 1e-12, "ell above mu");
+            if node.first_branch != super::UNEXPANDED {
+                continue;
+            }
+
+            let id = fresh
+                .add_node(None, node.depth, node.scenarios.clone())
+                .expect("valid model");
+            let built = fresh.tree.node(id);
+            assert_eq!(built.mu.to_bits(), node.mu.to_bits());
+            assert_eq!(built.ell.to_bits(), node.ell.to_bits());
+            assert_eq!(built.upper.to_bits(), node.upper.to_bits());
+            assert_eq!(built.default_value.to_bits(), node.default_value.to_bits());
+        }
+    }
+
+    /// Checks that replaying the kept expansions of `search`, re-rooted at depth 1, on a fresh
+    /// tree under the new root, in id order, rebuilds the whole kept tree: same ids,
+    /// structure and bounds, bit for bit.
+    fn assert_replay_rebuilds_the_kept_tree<U: FnMut(&bool) -> f64>(
+        search: &Despot<'_, Coin, UniformRandom, U>,
+        config: DespotConfig,
+    ) {
+        let scenarios = search.tree.node(ROOT).scenarios.clone();
+        let mut replay =
+            Despot::with_root(&Coin, scenarios, 1, UniformRandom, |_: &bool| 10.0, config)
+                .expect("valid input");
+        for id in 0..search.tree.nodes.len() {
+            let id = u32::try_from(id).expect("small tree");
+            if search.tree.node(id).first_branch != super::UNEXPANDED {
+                replay.expand(id).expect("valid model");
+            }
+        }
+
+        for id in (0..replay.tree.nodes.len()).rev() {
+            replay.back_up(u32::try_from(id).expect("small tree"));
+        }
+
+        assert_eq!(replay.tree.nodes.len(), search.tree.nodes.len());
+        for (kept, built) in search.tree.nodes.iter().zip(&replay.tree.nodes) {
+            assert_eq!(kept.parent, built.parent);
+            assert_eq!(kept.first_branch, built.first_branch);
+            assert_eq!(kept.scenarios, built.scenarios);
+            assert_eq!(kept.mu.to_bits(), built.mu.to_bits());
+            assert_eq!(kept.ell.to_bits(), built.ell.to_bits());
+            assert_eq!(kept.upper.to_bits(), built.upper.to_bits());
+        }
+    }
+
     /// After re-rooting, every leaf equals a node freshly built under the new root, bounds
     /// stay ordered at every node, and planning continues from the kept subtree.
     #[test]
@@ -1343,48 +1402,8 @@ mod tests {
         let mut fresh =
             Despot::with_root(&Coin, scenarios, 1, UniformRandom, |_: &bool| 10.0, config)
                 .expect("valid input");
-        for node in &search.tree.nodes {
-            assert!(node.ell <= node.mu + 1e-12, "ell above mu");
-            if node.first_branch != super::UNEXPANDED {
-                continue;
-            }
-
-            let id = fresh
-                .add_node(None, node.depth, node.scenarios.clone())
-                .expect("valid model");
-            let built = fresh.tree.node(id);
-            assert_eq!(built.mu.to_bits(), node.mu.to_bits());
-            assert_eq!(built.ell.to_bits(), node.ell.to_bits());
-            assert_eq!(built.upper.to_bits(), node.upper.to_bits());
-            assert_eq!(built.default_value.to_bits(), node.default_value.to_bits());
-        }
-
-        // Replaying the kept expansions on a fresh tree under the new root, in id order,
-        // rebuilds the whole kept tree: same ids, structure and bounds, bit for bit.
-        let scenarios = search.tree.node(ROOT).scenarios.clone();
-        let mut replay =
-            Despot::with_root(&Coin, scenarios, 1, UniformRandom, |_: &bool| 10.0, config)
-                .expect("valid input");
-        for id in 0..search.tree.nodes.len() {
-            let id = u32::try_from(id).expect("small tree");
-            if search.tree.node(id).first_branch != super::UNEXPANDED {
-                replay.expand(id).expect("valid model");
-            }
-        }
-
-        for id in (0..replay.tree.nodes.len()).rev() {
-            replay.back_up(u32::try_from(id).expect("small tree"));
-        }
-
-        assert_eq!(replay.tree.nodes.len(), search.tree.nodes.len());
-        for (kept, built) in search.tree.nodes.iter().zip(&replay.tree.nodes) {
-            assert_eq!(kept.parent, built.parent);
-            assert_eq!(kept.first_branch, built.first_branch);
-            assert_eq!(kept.scenarios, built.scenarios);
-            assert_eq!(kept.mu.to_bits(), built.mu.to_bits());
-            assert_eq!(kept.ell.to_bits(), built.ell.to_bits());
-            assert_eq!(kept.upper.to_bits(), built.upper.to_bits());
-        }
+        assert_leaves_match_a_fresh_build(&search, &mut fresh);
+        assert_replay_rebuilds_the_kept_tree(&search, config);
 
         let root = search.tree.node(ROOT);
         assert!(root.parent.is_none());
