@@ -120,11 +120,7 @@
 //! # Ok::<(), stochastic_search::Error<bool>>(())
 //! ```
 //!
-//! See `docs/design.md` in the repository for the design and milestones.
-//!
-//! ## Status
-//!
-//! Pre-release. The API will change.
+//! See `docs/design.md` in the repository for the design.
 //!
 //! Repository: <https://github.com/sunsided/stochastic-search>
 

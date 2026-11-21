@@ -5,25 +5,11 @@ needs before it can be merged.
 
 ## Setup
 
-1. `search-core` is a crates.io dependency. To develop against a local checkout of it, clone
-   this repository into the planning hub directory next to
-   [search-core](https://github.com/sunsided/search-core). The hub's untracked
-   `.cargo/config.toml` patches `search-core` (and the other planning crates) to the sibling
-   working trees through `[patch.crates-io]`:
-
-   ```text
-   planning/
-     .cargo/config.toml
-     search-core/
-     stochastic-search/
-   ```
-
-   Without the hub, builds use the published `search-core`. CI does the same.
-2. Install Rust via [rustup](https://rustup.rs/). Development uses current stable; the MSRV
+1. Install Rust via [rustup](https://rustup.rs/). Development uses current stable; the MSRV
    in `Cargo.toml` (`rust-version`) applies to the library, not to tests and benches.
-3. Install [Task](https://taskfile.dev/installation/). All commands below go through it. Run
+2. Install [Task](https://taskfile.dev/installation/). All commands below go through it. Run
    `task` to list them.
-4. Optional tools: the tasks tell you when one is missing.
+3. Optional tools: the tasks tell you when one is missing.
    - [cargo-nextest](https://nexte.st/) for faster tests;
    - [cargo-deny](https://github.com/EmbarkStudios/cargo-deny) and
      [cargo-hack](https://github.com/taiki-e/cargo-hack);
@@ -32,7 +18,7 @@ needs before it can be merged.
    - [mermaid-cli](https://github.com/mermaid-js/mermaid-cli) when changing diagrams;
    - [actionlint](https://github.com/rhysd/actionlint) and [zizmor](https://docs.zizmor.sh/);
    - nightly Rust plus [cargo-fuzz](https://github.com/rust-fuzz/cargo-fuzz) for fuzzing.
-5. Install the git hooks with [prek](https://prek.j178.dev/) (`prek install`), or with
+4. Install the git hooks with [prek](https://prek.j178.dev/) (`prek install`), or with
    `pre-commit install`. Fast checks run on commit; clippy and tests run on push.
 
 ## Everyday commands
@@ -94,10 +80,8 @@ works on them.
 Versions follow [Semantic Versioning 2.0](https://semver.org/spec/v2.0.0.html), as Cargo
 implements it (in `0.x`, a minor bump is breaking).
 
-Releases are handled by [release-plz](https://release-plz.dev/). They are dormant until the
-repository variable `RELEASE_APP_CLIENT_ID` (and the secret `RELEASE_APP_PRIVATE_KEY`) of the
-release GitHub App are set; setting them activates the release jobs. From then on, every merge
-to `main` updates a release PR. Merging that PR tags the release and creates the
+Releases are handled by [release-plz](https://release-plz.dev/). Every merge to `main`
+updates a release PR. Merging that PR tags the release and creates the
 GitHub Releases. The `vX.Y.Z` tag then triggers `publish-crates-io.yml`, which
 publishes the crate to crates.io via trusted publishing from the protected `crates-io`
 environment.

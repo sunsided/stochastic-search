@@ -8,8 +8,52 @@
 [![License](https://img.shields.io/crates/l/stochastic-search)](https://github.com/sunsided/stochastic-search#license)
 [![unsafe forbidden](https://img.shields.io/badge/unsafe-forbidden-success.svg)](https://github.com/rust-secure-code/safety-dance/)
 
-Planning under probabilistic outcomes: LAO*, iLAO*, CG-iLAO*, RTDP, LRTDP, BRTDP, FRTDP, VPI-RTDP, POMCP, DESPOT, and
-the multi-objective MOLAO*, iMOLAO* and MOLRTDP.
+Planning under probabilistic outcomes: LAO\*, iLAO\*, CG-iLAO\*, RTDP, LRTDP, BRTDP, FRTDP,
+VPI-RTDP, POMCP, DESPOT, and the multi-objective MOLAO\*, iMOLAO\* and MOLRTDP.
+
+When actions have uncertain outcomes (a wheel slips, a request times out), a single path is
+no longer a plan: the crate solves stochastic shortest
+path problems (SSPs) and returns a value function with a greedy policy that says what to do
+in every state the plan can reach. Problems are described through a small `Mdp` trait with
+callbacks, so states are generated on demand rather than enumerated up front; dead ends can
+be treated as infinitely or finitely expensive. Partially observable problems use a separate
+generative POMDP model with the online planners POMCP and DESPOT, and problems with several
+cost dimensions get the multi-objective algorithms of Chen, Trevizan and Thiébaux. The crate
+is `no_std` with `alloc`, and value iteration serves as the reference that the other
+algorithms are tested against.
+
+## Who this is for
+
+- Robotics and autonomy work where actions have uncertain outcomes and the planner needs a
+  policy with a convergence guarantee (LRTDP, iLAO\*) or with bounds on how far it is from
+  optimal (BRTDP, FRTDP, VPI-RTDP).
+- Online decision making under partial observability, e.g. a robot or game agent acting on
+  noisy sensor readings, where POMCP or DESPOT plan from a particle belief and reuse their
+  search tree between decisions.
+- Planning with several competing costs (time against risk, energy against wear), where the
+  multi-objective algorithms return the convex coverage set of policies instead of one
+  weighted compromise.
+- Researchers and students comparing MDP heuristic search algorithms on the same model and
+  test oracle.
+- If every action has exactly one outcome, use
+  [heuristic-search](https://github.com/sunsided/heuristic-search) (or
+  [multiobjective-search](https://github.com/sunsided/multiobjective-search) for several
+  costs); it is simpler and much faster. Goal tests written against
+  [search-core](https://github.com/sunsided/search-core) work in both, and heuristics carry
+  over once their cost type is `f64`.
+
+## Installation
+
+```sh
+cargo add stochastic-search
+```
+
+Or in `Cargo.toml`:
+
+```toml
+[dependencies]
+stochastic-search = "0.1"
+```
 
 ## Scope
 
@@ -31,21 +75,10 @@ the multi-objective MOLAO*, iMOLAO* and MOLRTDP.
   not implemented, because the crate has no factored model
 
 - Shared traits: `Goal`, `Heuristic`, `heuristic_fn` and `Budget` come from
-  `search-core` and are re-exported here. Breaking: `Budget` bounds are
-  now `Budget<Stats>`. `Zero` is `search-core`'s as well (it covers `f64`); the
+  `search-core` and are re-exported here; `Budget` bounds are `Budget<Stats>`. `Zero` is `search-core`'s as well (it covers `f64`); the
   multi-objective algorithms use the local `ZeroVector`.
 
-See [docs/design.md](https://github.com/sunsided/stochastic-search/blob/main/docs/design.md) for the model, guarantees and milestones.
-
-## Installation
-
-The crate is not on crates.io yet beyond a name placeholder; use a git dependency until
-the first release:
-
-```toml
-[dependencies]
-stochastic-search = { git = "https://github.com/sunsided/stochastic-search" }
-```
+See [docs/design.md](https://github.com/sunsided/stochastic-search/blob/main/docs/design.md) for the model and its guarantees.
 
 ## Example
 
@@ -88,10 +121,6 @@ assert!((solution.initial_value() - 4.0).abs() < 1e-5);
 ```
 
 The crate is `no_std` and needs only `alloc`.
-
-## Status
-
-Pre-release. Version 0.0.0 reserves the name; the API will change.
 
 ## Minimum supported Rust version
 

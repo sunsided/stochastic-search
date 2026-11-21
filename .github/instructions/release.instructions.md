@@ -13,8 +13,7 @@ applyTo: "**/Cargo.toml,release-plz.toml,.github/workflows/release-plz.yml,**/CH
   are not published (the fuzz crate) have `publish = false`.
 - The single crate `stochastic-search` is tagged `vX.Y.Z`.
 - New dependencies must pass `cargo deny check`: allowed licenses, no advisories, no git or
-  unknown-registry sources. Dependencies come from crates.io (`search-core` too; local
-  builds patch it to the sibling checkout); a new runtime dependency needs a reason in the PR
+  unknown-registry sources. Dependencies come from crates.io (`search-core` too); a new runtime dependency needs a reason in the PR
   and must work under `no_std`.
 - `rust-version` is a signal, not a contract. Raising it is allowed when a dependency or a
   feature benefits. It needs a minor release and a changelog note, never a patch release.

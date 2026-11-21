@@ -27,15 +27,10 @@ applyTo: ".github/workflows/**,Taskfile.dist.yaml,**/Taskfile.dist.yaml,.pre-com
   `--all-targets`): dev-dependencies may need a newer Rust. Do not add `--all-targets` back.
 - `fuzz/` is a separate nightly workspace. Its tasks live in `fuzz/Taskfile.dist.yaml`,
   included as `fuzz:`; CI's `fuzz` job mirrors `task fuzz:build` and `task fuzz:lint`.
-- No `Cargo.lock` is tracked (root or `fuzz/`): this is a library, and local builds in the
-  planning hub patch published siblings to their working trees (the hub's
-  `.cargo/config.toml`), which rewrites the lock on every build. CI resolves fresh from
+- No `Cargo.lock` is tracked (root or `fuzz/`): this is a library. CI resolves fresh from
   crates.io, and no step uses `--locked`.
-- `search-core` is a plain crates.io dependency. CI checks out this repository only; do not
-  add `path = "../search-core"` or sibling checkouts back (Dependabot cannot reach them).
-- `cargo fmt` runs without `--all`, which under the hub patch would also format `search-core`.
-- release-plz jobs are gated on `vars.RELEASE_APP_CLIENT_ID`, so they stay dormant until the
-  release App is configured.
+- `search-core` is a plain crates.io dependency. CI checks out this repository only.
+- release-plz jobs are gated on `vars.RELEASE_APP_CLIENT_ID`.
 - `scripts/check-branch.sh` is the single definition of allowed branch names. It is used by
   the Taskfile, the hook and the CI `branch` job.
 - New jobs that should gate merges must also be added to branch protection. Mention that in

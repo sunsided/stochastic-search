@@ -1,6 +1,6 @@
 [package]
 name = "stochastic-search"
-description = "Planning under probabilistic outcomes: LAO*, iLAO*, CG-iLAO*, RTDP, LRTDP, BRTDP, FRTDP, VPI-RTDP, POMCP, DESPOT and multi-objective MOLAO*/MOLRTDP"
+description = "Planning under probabilistic outcomes for MDPs and POMDPs: LAO*, iLAO*, CG-iLAO*, RTDP, LRTDP, BRTDP, FRTDP, VPI-RTDP, POMCP, DESPOT and multi-objective MOLAO*, iMOLAO* and MOLRTDP"
 version = "0.0.0"
 edition = "2024"
 rust-version = "1.85"
@@ -8,8 +8,8 @@ authors = ["Markus Mayer <widemeadows@gmail.com>"]
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/sunsided/stochastic-search"
 readme = "README.md"
-keywords = ["mdp", "planning", "pomdp", "rtdp", "search"]
-categories = ["algorithms", "science", "no-std"]
+keywords = ["mdp", "pomdp", "planning", "rtdp", "mcts"]
+categories = ["algorithms", "science", "science::robotics", "no-std"]
 # Repository tooling stays out of the published crate.
 exclude = [
     ".github/",

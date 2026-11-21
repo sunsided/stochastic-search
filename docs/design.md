@@ -1,15 +1,12 @@
 # stochastic-search: design
 
-Status: draft on branch `draft/initial`; milestones 1, 2 (RTDP, LAO*, iLAO*, BRTDP, FRTDP, VPI-RTDP) and 4 (POMCP and DESPOT with
-tree reuse and belief tracking) and 5 (multi-objective SSPs) implemented.
-
 ## Goal and scope
 
 `stochastic-search` plans under probabilistic action outcomes. A caller describes a
 finite Markov decision process (MDP) through small capability traits and gets back a value
 function and a greedy policy.
 
-In scope, in milestone order (see [Milestones](#milestones)):
+In scope:
 
 - reference: value iteration (VI) on the reachable state space, used as a test oracle;
 - real-time dynamic programming: RTDP, labeled RTDP (LRTDP), and with two-sided bounds
@@ -92,7 +89,7 @@ pub struct ZeroVector; // Heuristic<S, Vec<[f64; N]>>, the zero vector everywher
 
 - `actions` emits every applicable action with its cost `c(s, a)`. Cost per state and
   action is the SSP standard; outcome-dependent costs fold into it as their expectation.
-- `outcomes` keeps the callback form of the 0.0.0 placeholder: the successors of one action
+- `outcomes` has a callback form: the successors of one action
   and their probabilities. An implementation needs no allocation and no iterator type.
 - `Goal` and `Heuristic` are separate values, not methods on the MDP, exactly as in
   `heuristic-search` (both are `search-core`'s). One MDP can be solved for many goals and heuristics. `Heuristic<S, C>`
@@ -220,7 +217,7 @@ reachable state.
 
 ## Algorithms
 
-### Value iteration (milestone 1, oracle)
+### Value iteration (oracle)
 
 Gauss-Seidel value iteration over all states reachable from `s0`. Under `DeadEnds::Infinite`
 it first computes the states that reach a goal with probability 1 under some policy (the
@@ -230,7 +227,7 @@ infinite value, and VI runs from `0` on the rest, which converges under the posi
 assumption. Sweeps stop when the largest residual is below epsilon. It exists to check
 LRTDP; it is not meant for large problems.
 
-### RTDP and LRTDP (milestones 1 and 2)
+### RTDP and LRTDP
 
 RTDP (Barto, Bradtke and Singh 1995) runs trials from `s0`: back up the current state, take
 the greedy action, sample a successor, repeat until a goal. With an admissible heuristic
@@ -331,7 +328,7 @@ of the cached outcome list in emission order. If rounding leaves `u` past the la
 the last outcome is taken. Together with insertion-ordered ids and first-wins tie
 breaking, one seed gives bit-identical values, policies and statistics.
 
-### LAO* and iLAO* (milestone 2)
+### LAO* and iLAO*
 
 LAO* (Hansen and Zilberstein 2001) is AO* for cyclic AND/OR graphs: keep an explicit
 graph and the best partial solution graph; expand a tip of the best solution graph; run
@@ -365,7 +362,7 @@ Implementation, on the LRTDP run (`space`, meter, dead-end proofs and events sha
   the dead-end proof catches them as in LRTDP;
 - passes count in `Stats::sweeps`.
 
-### Bounded RTDP (milestone 2)
+### Bounded RTDP
 
 BRTDP (McMahan, Likhachev and Gordon 2005) keeps a lower bound `L` (the node value, from
 the heuristic) and an upper bound `U` (a `Vec<f64>` parallel to the node ids, so `Node`
@@ -432,7 +429,7 @@ stored state at any time, converged or not. The policy is greedy on `U` at each 
 last backup; with a monotone `U` (which backups preserve) it satisfies
 `U(s) >= Q_U(s, pi(s))`. The trial follows the `L`-greedy action, as in the paper.
 
-### CG-iLAO* (milestone 3)
+### CG-iLAO*
 
 CG-iLAO* (Schmalz and Trevizan 2024, Algorithm 2) keeps a per-action "active" flag on top
 of the cached expansions: fringe states are partly expanded with their minimal-Q actions,
@@ -449,7 +446,7 @@ climb forever on a cycle of active actions that never reaches the goal, so it al
 after a sweep that queued candidates. Values can decrease, so `V <= V*` does not hold; the
 tests check `|V - V*|` against LRTDP's gap bound.
 
-### Multi-objective SSPs (milestone 5)
+### Multi-objective SSPs
 
 Chen, Trevizan and Thiébaux 2023 (AAAI 2023, arXiv 2303.14363). A MOSSP gives every action
 a cost vector in `R^N_{>=0}` (`MoMdp<N>`, `[f64; N]` costs, `N` a const generic). The
@@ -588,7 +585,7 @@ ancestor sets, as classic LAO* does.
 - Unit tests: the pruning against a monotone-chain hull on 300 random 2D sets, LP margins,
   the bounded sum, and the Hausdorff distance with `b`.
 
-### Belief space (milestone 4)
+### Belief space
 
 POMCP (Silver and Veness 2010) and DESPOT (Somani, Ye, Hsu and Lee 2013; Ye et al. 2017)
 plan in belief space with sampled observations. They use a separate model, not `Mdp`:
@@ -736,35 +733,20 @@ overestimates are allowed (they only void the optimality bound). Neither panics.
   not compared (POMCP is biased, DESPOT's bounds hold for its scenarios only).
 - Proptest case counts are fixed in code (64), so `cargo test` stays fast.
 
-## Milestones
+## Roadmap
 
-1. Model traits, explicit state space, value iteration, LRTDP, tests. (this draft)
-2. Plain RTDP and iLAO*, sharing `space` and the LRTDP run. (done) Bounded RTDP with
-   finite upper bounds, FRTDP and VPI-RTDP on a shared bounds run (done). One-tip LAO*
-   (done).
-3. CG-iLAO* (done); policy evaluation utilities (exact evaluation of a fixed policy by linear
-   solve or iteration); discounted MDP adapter.
-4. Belief-space trait set; POMCP; DESPOT; belief tracking and tree reuse between
-   decisions (done). Next: decide whether this becomes `pomdp-search`.
-5. Multi-objective SSPs: MOVI, MOLAO*, iMOLAO*, MOLRTDP and the explicit-state
-   heuristics of Chen, Trevizan and Thiébaux 2023 (done).
+- Policy evaluation utilities: exact evaluation of a fixed policy by linear solve or
+  iteration.
+- A discounted MDP adapter.
 
 ## Cross-crate needs
 
 - `Goal`, `Heuristic`, `heuristic_fn`, `HeuristicFn`, `Zero` and `Budget` come from
-  `search-core` (adopted per its `MIGRATION.md`) and are re-exported at the crate root, so
-  `stochastic_search::Heuristic` and friends keep working and a heuristic or budget
-  written for `heuristic-search` works here. `Zero` became `search-core`'s once that
-  crate implemented `Heuristic<S, f64>` for it (0.1); the local copy is gone, and with it
-  the name clash on glob imports. `Limits`, `Stats`, `Mdp` and the multi-objective
-  `ZeroVector` stay local. Breaking changes of the adoption:
-  - `Budget` is now `Budget<Stats>`: code naming the trait in bounds writes
-    `B: Budget<Stats>` and `impl Budget<Stats> for MyBudget`. Closures and `Limits` are
-    unaffected.
-  - `Heuristic` gains a default type parameter (`C = u32`); this crate's algorithms still
-    require `Heuristic<S, f64>`, which closures infer, so call sites are unchanged.
-  - `stochastic_search::Zero` is now `search_core::Zero` (same unit struct, same derives
-    plus `Hash`), so the two names no longer clash.
+  `search-core` and are re-exported at the crate root, so a heuristic or budget written for
+  `heuristic-search` works here. `Budget` is `Budget<Stats>`. `Heuristic` defaults to
+  `C = u32`; this crate's algorithms require `Heuristic<S, f64>`, which closures infer.
+  `search_core::Zero` implements `Heuristic<S, f64>`, so there is no local copy. `Limits`,
+  `Stats`, `Mdp` and the multi-objective `ZeroVector` stay local.
 - `heuristic-search` is generic over `Cost`; this crate fixes `f64`. A shared heuristic
   trait must therefore stay generic in `C`, and integer-cost heuristics need a conversion
   adapter (`u32 -> f64` is lossless).
@@ -785,7 +767,7 @@ overestimates are allowed (they only void the optimality bound). Neither panics.
 - Hansen, Zilberstein. *LAO\*: A heuristic search algorithm that finds solutions with
   loops.* Artificial Intelligence 129, 2001.
 - Schmalz, Trevizan. *Efficient constraint generation for stochastic shortest path
-  problems.* AAAI 2024. (Venue and details to verify before milestone 3.)
+  problems.* AAAI 2024. (Venue and details to verify.)
 - Sanner, Goetschalckx, Driessens, Shani. *Bayesian real-time dynamic programming.* IJCAI
   2009.
 - Smith, Simmons. *Focused real-time dynamic programming for MDPs: squeezing more out of a
