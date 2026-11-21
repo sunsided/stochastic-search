@@ -30,7 +30,7 @@ exclude = [
 # sibling checkout through the planning hub's [patch.crates-io] (CONTRIBUTING.md).
 search-core = "0.3"
 # Hash table for state interning under no_std; see docs/design.md.
-hashbrown = { version = "0.16", default-features = false, features = ["default-hasher"] }
+hashbrown = { version = "0.17", default-features = false, features = ["default-hasher"] }
 # Square roots, logarithms and powers for UCB and discounting under no_std.
 libm = "0.2.16"
 # The generator trait of the POMDP generative model.
