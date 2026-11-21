@@ -46,7 +46,8 @@ tasks:
   fmt:
     desc: Format the fuzz crate (separate workspace, not covered by the root cargo fmt)
     cmds:
-      # No --all: it would also format the path dependencies (this crate and ../search-core).
+      # No --all: it would also format the path dependency on this crate (and, under the
+      # planning hub's patch, ../search-core).
       - cargo fmt
 
   lint:

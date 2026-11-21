@@ -1,8 +1,8 @@
 # Repository instructions
 
 `stochastic-search` is a `no_std` Rust library of planners for probabilistic problems
-(SSP MDPs, multi-objective SSPs and generative POMDPs), with strict conventions. It builds
-against the sibling repository `search-core` through `path = "../search-core"`.
+(SSP MDPs, multi-objective SSPs and generative POMDPs), with strict conventions. It depends
+on `search-core` from crates.io; local builds patch it to the sibling checkout.
 Path-specific rules live in `.github/instructions/*.instructions.md`.
 
 - Run checks through the Taskfile: `task ci` mirrors CI. `task lint`, `task test` and

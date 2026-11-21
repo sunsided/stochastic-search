@@ -552,6 +552,8 @@ dependencies = [
 [[package]]
 name = "search-core"
 version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ff8359531c335b0cde4874ad128a2b0856663c40bc67d7757255716fdff6ef45"
 
 [[package]]
 name = "serde"

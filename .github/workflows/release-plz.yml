@@ -3,8 +3,6 @@
 # tag push starts publish-crates-io.yml, which publishes from the tag-restricted `crates-io` environment.
 # The App token matters: tags and PRs created with GITHUB_TOKEN would not trigger other workflows.
 # Dormant until the repository variable RELEASE_APP_CLIENT_ID is set (CONTRIBUTING.md, Releases).
-# search-core is a sibling path dependency: the jobs check it out next to this crate
-# (.github/actions/checkout-siblings) and point release-plz at stochastic-search/.
 name: Release-plz
 
 on:
@@ -31,18 +29,14 @@ jobs:
           permission-pull-requests: read
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          path: stochastic-search
           fetch-depth: 0
           persist-credentials: false
-      - uses: ./stochastic-search/.github/actions/checkout-siblings # zizmor: ignore[self-repository] actionlint 1.7.12 rejects `$/`
-      - uses: dtolnay/rust-toolchain@39008827e6b4319a349e9a42dfc90579dd25f1ca # stable
+      - uses: dtolnay/rust-toolchain@df2a88e9fe4098bad09cb42c3dec7187f15861fc # master
         with:
           toolchain: stable
       - uses: release-plz/action@66b324fd6c72d05d2a08568492ecdd62bfb8a62b # v0.5.148
         with:
           command: release
-          manifest_path: stochastic-search/Cargo.toml
-          config: stochastic-search/release-plz.toml
         env:
           GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
 
@@ -65,17 +59,13 @@ jobs:
           permission-pull-requests: write
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          path: stochastic-search
           fetch-depth: 0
           persist-credentials: false
-      - uses: ./stochastic-search/.github/actions/checkout-siblings # zizmor: ignore[self-repository] actionlint 1.7.12 rejects `$/`
-      - uses: dtolnay/rust-toolchain@39008827e6b4319a349e9a42dfc90579dd25f1ca # stable
+      - uses: dtolnay/rust-toolchain@df2a88e9fe4098bad09cb42c3dec7187f15861fc # master
         with:
           toolchain: stable
       - uses: release-plz/action@66b324fd6c72d05d2a08568492ecdd62bfb8a62b # v0.5.148
         with:
           command: release-pr
-          manifest_path: stochastic-search/Cargo.toml
-          config: stochastic-search/release-plz.toml
         env:
           GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}

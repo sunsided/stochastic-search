@@ -5,17 +5,20 @@ needs before it can be merged.
 
 ## Setup
 
-1. Clone [search-core](https://github.com/sunsided/search-core) next to this repository.
-   `Cargo.toml` depends on it through `path = "../search-core"`, so local builds expect
-   both checkouts side by side:
+1. `search-core` is a crates.io dependency. To develop against a local checkout of it, clone
+   this repository into the planning hub directory next to
+   [search-core](https://github.com/sunsided/search-core). The hub's untracked
+   `.cargo/config.toml` patches `search-core` (and the other planning crates) to the sibling
+   working trees through `[patch.crates-io]`:
 
    ```text
    planning/
+     .cargo/config.toml
      search-core/
      stochastic-search/
    ```
 
-   CI checks out the siblings the same way (`.github/actions/checkout-siblings`).
+   Without the hub, builds use the published `search-core`. CI does the same.
 2. Install Rust via [rustup](https://rustup.rs/). Development uses current stable; the MSRV
    in `Cargo.toml` (`rust-version`) applies to the library, not to tests and benches.
 3. Install [Task](https://taskfile.dev/installation/). All commands below go through it. Run

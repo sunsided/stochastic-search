@@ -64,7 +64,7 @@ tasks:
   fmt:
     desc: Format all Rust sources
     cmds:
-      # No --all: it would also format the sibling path dependency ../search-core.
+      # No --all: under the planning hub's [patch.crates-io] it would also format ../search-core.
       - cargo fmt
       - task: fuzz:fmt
 

@@ -39,13 +39,12 @@ See [docs/design.md](https://github.com/sunsided/stochastic-search/blob/main/doc
 
 ## Installation
 
-The crate is not on crates.io yet beyond a name placeholder. It builds against
-[search-core](https://github.com/sunsided/search-core) through a sibling path, so clone
-both repositories into the same directory and depend on this one by path:
+The crate is not on crates.io yet beyond a name placeholder; use a git dependency until
+the first release:
 
 ```toml
 [dependencies]
-stochastic-search = { path = "../stochastic-search" }
+stochastic-search = { git = "https://github.com/sunsided/stochastic-search" }
 ```
 
 ## Example

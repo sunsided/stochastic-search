@@ -105,6 +105,8 @@ checksum = "63b8176103e19a2643978565ca18b50549f6101881c443590420e4dc998a3c69"
 [[package]]
 name = "search-core"
 version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ff8359531c335b0cde4874ad128a2b0856663c40bc67d7757255716fdff6ef45"
 
 [[package]]
 name = "shlex"

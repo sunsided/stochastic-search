@@ -3,8 +3,6 @@
 # ("Cargo: Bump ...") instead of Conventional Commits prefixes (no "deps:", "chore:").
 # cooldown follows zizmor's dependabot-cooldown recommendation (7 days); raise it if the repo's
 # zizmor config demands more. Add docker / npm blocks with the same settings if the repo grows them.
-# search-core is a sibling path dependency (../search-core) outside this repository; Dependabot
-# cannot update it, so its version requirement in Cargo.toml is raised by hand.
 version: 2
 updates:
   - package-ecosystem: cargo

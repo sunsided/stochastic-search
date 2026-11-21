@@ -11,9 +11,9 @@ applyTo: ".github/workflows/**,Taskfile.dist.yaml,**/Taskfile.dist.yaml,.pre-com
   commands.
 - Every `uses:` is pinned to a full 40-character commit SHA, with a `# vX.Y.Z` comment. Reject
   tag or branch refs.
-- `dtolnay/rust-toolchain` is pinned to its `stable` or `nightly` branch commit and always
-  gets an explicit `toolchain:` input, so the toolchain does not depend on which branch commit
-  Dependabot pins.
+- `dtolnay/rust-toolchain` is pinned to a `master` commit (`# master`) and always gets an
+  explicit `toolchain:` input. Its `stable`/`nightly` branches are not tags, and Dependabot
+  cannot follow them: it re-pins branch commits to `master`.
 - The workflow sets `permissions: {}` at the top, and each job sets the least privilege it
   needs. Every `actions/checkout` sets `persist-credentials: false`.
 - No `pull_request_target`. No `${{ github.event.* }}` or other untrusted expressions
@@ -27,16 +27,13 @@ applyTo: ".github/workflows/**,Taskfile.dist.yaml,**/Taskfile.dist.yaml,.pre-com
   `--all-targets`): dev-dependencies may need a newer Rust. Do not add `--all-targets` back.
 - `fuzz/` is a separate nightly workspace. Its tasks live in `fuzz/Taskfile.dist.yaml`,
   included as `fuzz:`; CI's `fuzz` job mirrors `task fuzz:build` and `task fuzz:lint`.
-- `Cargo.lock` is tracked, but no step uses `--locked`: CI builds against the sibling
-  `search-core` at its default branch, whose version may be ahead of the lock.
-- `search-core` is a sibling path dependency (`../search-core`). Every job that runs cargo
-  checks this repository out with `path: stochastic-search`, then calls
-  `./stochastic-search/.github/actions/checkout-siblings`, and sets
-  `defaults.run.working-directory: stochastic-search`. Actions that take a path (rust-cache
-  `workspaces`, cargo-deny and semver-checks `manifest-path`, codecov `working-directory`,
-  release-plz `manifest_path`/`config`) get it explicitly. A new sibling path dependency adds
-  a step to that composite action.
-- `cargo fmt` runs without `--all`, which would also format the sibling path dependencies.
+- `Cargo.lock` is tracked with the crates.io entry for `search-core`. Local builds patch it
+  to the sibling working tree (the planning hub's `.cargo/config.toml`) and rewrite that entry
+  plus `[[patch.unused]]` tables; do not commit those. No step uses `--locked`, so a lock
+  committed from a hub checkout cannot break CI.
+- `search-core` is a plain crates.io dependency. CI checks out this repository only; do not
+  add `path = "../search-core"` or sibling checkouts back (Dependabot cannot reach them).
+- `cargo fmt` runs without `--all`, which under the hub patch would also format `search-core`.
 - release-plz jobs are gated on `vars.RELEASE_APP_CLIENT_ID`, so they stay dormant until the
   release App is configured.
 - `scripts/check-branch.sh` is the single definition of allowed branch names. It is used by
