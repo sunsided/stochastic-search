@@ -121,7 +121,7 @@ jobs:
       run:
         working-directory: stochastic-search
     env:
-      RUSTDOCFLAGS: -D warnings
+      RUSTDOCFLAGS: -D warnings --html-in-header ${{ github.workspace }}/stochastic-search/docs/mermaid.html
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
