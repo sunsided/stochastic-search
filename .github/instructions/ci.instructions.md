@@ -35,3 +35,8 @@ applyTo: ".github/workflows/**,Taskfile.dist.yaml,**/Taskfile.dist.yaml,.pre-com
   the Taskfile, the hook and the CI `branch` job.
 - New jobs that should gate merges must also be added to branch protection. Mention that in
   the PR.
+- `dependency submission` (`dependencies` in `ci.yml`) runs on push to `main` only. It
+  uploads a `cargo-sbom` SPDX file to the dependency graph. It has no Taskfile task and is
+  not a required check.
+- `zizmor (code scanning)` (`zizmor-sarif` in `actions-lint.yml`) runs on push to `main` only
+  and uploads zizmor's SARIF to the Security tab. The blocking `zizmor` job stays the PR gate.
