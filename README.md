@@ -22,6 +22,8 @@ cost dimensions get the multi-objective algorithms of Chen, Trevizan and Thiéba
 is `no_std` with `alloc`, and value iteration serves as the reference that the other
 algorithms are tested against.
 
+Part of the [planning and search crates](https://sunsided.github.io/planning-and-search/); see also this crate's [overview page](https://sunsided.github.io/planning-and-search/crates/stochastic-search/).
+
 ## Who this is for
 
 - Robotics and autonomy work where actions have uncertain outcomes and the planner needs a
